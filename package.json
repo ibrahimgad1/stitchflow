@@ -1,0 +1,21 @@
+{
+  "name": "clothing-factory-management",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline-first Windows desktop management system for a clothing factory.",
+  "workspaces": [
+    "backend",
+    "frontend",
+    "electron"
+  ],
+  "scripts": {
+    "dev:backend": "npm --workspace backend run dev",
+    "dev:frontend": "npm --workspace frontend run dev",
+    "dev:electron": "npm --workspace electron run dev",
+    "build": "npm --workspaces run build",
+    "lint": "npm --workspaces run lint",
+    "test": "npm --workspaces run test",
+    "db:migrate": "npm --workspace backend run db:migrate",
+    "db:seed": "npm --workspace backend run db:seed"
+  }
+}

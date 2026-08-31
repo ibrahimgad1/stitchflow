@@ -1,0 +1,16 @@
+{
+  "name": "@clothing-factory/electron",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "dev": "set ELECTRON_RUN_AS_NODE=& electron .",
+    "build": "echo \"Electron packaging will be added after foundation verification\"",
+    "lint": "node --check main.js && node --check preload.js",
+    "test": "node --check main.js && node --check preload.js"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  }
+}

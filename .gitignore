@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Builds
+dist/
+build/
+release/
+out/
+coverage/
+*.tsbuildinfo
+
+# Runtime data
+backend/data/
+backend/backups/
+backend/logs/
+*.db
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+docs
+
+PROJECT_FULL_IMPLEMENTATION_PLAN.md
+
+PROJECT_GENERAL_REFERENCE.md
+
