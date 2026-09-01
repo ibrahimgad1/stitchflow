@@ -1,16 +1,65 @@
 {
   "name": "@clothing-factory/electron",
   "version": "0.1.0",
+  "description": "Desktop wrapper for Clothing Factory Management System",
+  "author": "Antigravity Team",
   "private": true,
   "main": "main.js",
   "scripts": {
     "dev": "set ELECTRON_RUN_AS_NODE=& electron .",
-    "build": "echo \"Electron packaging will be added after foundation verification\"",
+    "build": "node copy-build-assets.js && electron-builder build --win",
     "lint": "node --check main.js && node --check preload.js",
     "test": "node --check main.js && node --check preload.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.3.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "uuid": "^11.0.5",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "electronVersion": "33.4.11",
+    "npmRebuild": false,
+    "appId": "com.clothingfactory.management",
+    "productName": "Clothing Factory Management",
+    "directories": {
+      "output": "dist/package"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "frontend/dist/**/*",
+      "backend/dist/**/*",
+      "backend/package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": null
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Clothing Factory Management"
+    }
   }
 }

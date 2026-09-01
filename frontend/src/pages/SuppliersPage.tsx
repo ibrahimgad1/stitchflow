@@ -10,6 +10,7 @@ import {
   useDebouncedValue
 } from "../components/ListPageShell";
 import { useI18n } from "../i18n";
+import { exportToCsv } from "../lib/export";
 import {
   createSupplier,
   formatMoney,
@@ -118,6 +119,21 @@ export function SuppliersPage() {
   const rows = suppliersQuery.data?.data ?? [];
   const meta = suppliersQuery.data?.meta;
 
+  function handleExport() {
+    exportToCsv<Supplier>(
+      "قائمة-الموردين",
+      [
+        { header: "اسم المورد", accessor: (s) => s.name },
+        { header: "جهة الاتصال", accessor: (s) => s.contactName || "-" },
+        { header: "رقم الهاتف", accessor: (s) => s.phone || "-" },
+        { header: "العنوان", accessor: (s) => s.address || "-" },
+        { header: "الحالة", accessor: (s) => (isActive(s.isActive) ? "نشط" : "غير نشط") },
+        { header: "ملاحظات", accessor: (s) => s.notes || "-" }
+      ],
+      rows
+    );
+  }
+
   return (
     <>
       <ListPageShell
@@ -130,6 +146,7 @@ export function SuppliersPage() {
         }}
         onCreate={openCreate}
         createLabel={t("suppliers.add")}
+        onExport={handleExport}
         footer={
           meta ? (
             <PaginationBar

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { loadEnv } from "../config/env.js";
 import { getDatabase } from "../database/connection.js";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
+import { checkAutoBackup } from "../services/backup.js";
 
 export const authRouter = Router();
 
@@ -15,7 +16,17 @@ const loginLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => process.env.NODE_ENV === "test" && req.headers["x-test-rate-limit"] !== "true",
   message: { statusCode: 429, message: "Too many login attempts, please try again later" }
+});
+
+const changePasswordLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => process.env.NODE_ENV === "test" && req.headers["x-test-rate-limit"] !== "true",
+  message: { statusCode: 429, message: "Too many password change attempts, please try again later" }
 });
 
 const loginSchema = z.object({
@@ -62,6 +73,12 @@ authRouter.post("/auth/login", loginLimiter, (req, res) => {
 
   db.prepare("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?").run(user.id);
 
+  setImmediate(() => {
+    checkAutoBackup().catch((err) => {
+      console.error("Failed to run automatic backup check during login:", err);
+    });
+  });
+
   const env = loadEnv();
   const token = jwt.sign({ sub: user.id }, env.jwtSecret, {
     expiresIn: env.jwtExpiresIn as SignOptions["expiresIn"]
@@ -82,7 +99,7 @@ authRouter.get("/auth/me", requireAuth, (req: AuthenticatedRequest, res) => {
   res.json({ user: req.user });
 });
 
-authRouter.post("/auth/change-password", requireAuth, (req: AuthenticatedRequest, res) => {
+authRouter.post("/auth/change-password", requireAuth, changePasswordLimiter, (req: AuthenticatedRequest, res) => {
   const parsed = changePasswordSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ statusCode: 400, message: "Password must be at least 8 characters" });

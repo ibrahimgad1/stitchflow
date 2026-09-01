@@ -108,6 +108,71 @@ reportsRouter.get("/dashboard/summary", (_req, res) => {
   });
 });
 
+reportsRouter.get("/dashboard/charts", (_req, res) => {
+  const db = getDatabase();
+  const monthly = db
+    .prepare(
+      `SELECT 
+         substr(invoice_date, 1, 7) as month,
+         COALESCE(SUM(total_minor),0) as salesMinor,
+         COALESCE(SUM(gross_profit_minor),0) as profitMinor
+       FROM sales_invoices WHERE status='confirmed' AND invoice_date >= date('now','-6 months')
+       GROUP BY substr(invoice_date, 1, 7) ORDER BY month ASC`
+    )
+    .all() as Array<{ month: string; salesMinor: number; profitMinor: number }>;
+
+  const monthlyExpenses = db
+    .prepare(
+      `SELECT substr(expense_date, 1, 7) as month, COALESCE(SUM(amount_minor),0) as expenseMinor
+       FROM expenses WHERE payment_status='paid' AND expense_date >= date('now','-6 months')
+       GROUP BY substr(expense_date, 1, 7) ORDER BY month ASC`
+    )
+    .all() as Array<{ month: string; expenseMinor: number }>;
+
+  const expMap = new Map(monthlyExpenses.map((e) => [e.month, e.expenseMinor]));
+  const combined = monthly.map((m) => ({
+    month: m.month,
+    salesMinor: m.salesMinor,
+    expenseMinor: expMap.get(m.month) ?? 0,
+    profitMinor: m.profitMinor
+  }));
+
+  const topSelling = db
+    .prepare(
+      `SELECT m.model_code AS modelCode, m.model_name AS modelName, COALESCE(SUM(sii.quantity),0) as totalQty
+       FROM sales_invoice_items sii
+       JOIN model_variants mv ON mv.id = sii.model_variant_id
+       JOIN models m ON m.id = mv.model_id
+       JOIN sales_invoices si ON si.id = sii.sales_invoice_id AND si.status='confirmed'
+       GROUP BY m.id ORDER BY totalQty DESC LIMIT 5`
+    )
+    .all();
+
+  res.json({ data: { monthly: combined, topSelling } });
+});
+
+reportsRouter.get("/dashboard/recent-activity", (_req, res) => {
+  const db = getDatabase();
+  const invoices = db
+    .prepare(
+      `SELECT si.id, si.invoice_number AS invoiceNumber, c.company_name AS customerName, si.total_minor AS totalMinor, si.status, si.invoice_date AS invoiceDate
+       FROM sales_invoices si JOIN customers c ON c.id = si.customer_id
+       ORDER BY si.created_at DESC LIMIT 5`
+    )
+    .all();
+  const batches = db
+    .prepare(
+      `SELECT pb.id, pb.batch_number AS batchNumber, m.model_code AS modelCode, pb.status, pb.good_quantity AS goodQuantity FROM production_batches pb JOIN models m ON m.id = pb.model_id ORDER BY pb.created_at DESC LIMIT 5`
+    )
+    .all();
+  const payments = db
+    .prepare(
+      `SELECT cp.id, cp.payment_number AS paymentNumber, c.company_name AS customerName, cp.amount_minor AS amountMinor FROM customer_payments cp JOIN customers c ON c.id = cp.customer_id ORDER BY cp.created_at DESC LIMIT 5`
+    )
+    .all();
+  res.json({ data: { invoices, batches, payments } });
+});
+
 reportsRouter.get("/reports/raw-material-stock", (req, res) => {
   const params = parsePagination(req);
   const db = getDatabase();

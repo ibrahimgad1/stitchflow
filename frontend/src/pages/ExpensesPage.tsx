@@ -9,7 +9,9 @@ import {
   StatusPill,
   useDebouncedValue
 } from "../components/ListPageShell";
+import { SearchableSelect } from "../components/SearchableSelect";
 import { useI18n } from "../i18n";
+import { exportToCsv } from "../lib/export";
 import {
   formatMoney,
   listExpenseCategories,
@@ -41,9 +43,10 @@ export function ExpensesPage() {
   const [error, setError] = useState("");
   const [fieldError, setFieldError] = useState("");
 
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("");
   const expensesQuery = useQuery({
-    queryKey: ["expenses", page, pageSize, debouncedSearch],
-    queryFn: () => listExpenses({ page, pageSize, search: debouncedSearch })
+    queryKey: ["expenses", page, pageSize, debouncedSearch, paymentStatusFilter],
+    queryFn: () => listExpenses({ page, pageSize, search: debouncedSearch, paymentStatus: paymentStatusFilter || undefined })
   });
 
   const categoriesQuery = useQuery({
@@ -111,6 +114,23 @@ export function ExpensesPage() {
   const rows = expensesQuery.data?.data ?? [];
   const meta = expensesQuery.data?.meta;
 
+  function handleExport() {
+    exportToCsv<any>(
+      "تقرير-المصروفات-العامة",
+      [
+        { header: "رقم المصروف", accessor: (e) => e.expenseNumber },
+        { header: "التاريخ", accessor: (e) => e.expenseDate },
+        { header: "الوصف والبيان", accessor: (e) => e.description },
+        { header: "بند المصروف", accessor: (e) => e.categoryName },
+        { header: "حالة السداد", accessor: (e) => (e.paymentStatus === "paid" ? "مسدد" : "غير مسدد") },
+        { header: "المبلغ (ج.م)", accessor: (e) => ((e.amountMinor || 0) / 100).toFixed(2) },
+        { header: "الخزينة المسدد منها", accessor: (e) => e.safeName || "-" },
+        { header: "ملاحظات", accessor: (e) => e.notes || "-" }
+      ],
+      rows
+    );
+  }
+
   return (
     <>
       <ListPageShell
@@ -123,6 +143,7 @@ export function ExpensesPage() {
         }}
         onCreate={openCreate}
         createLabel={t("expenses.add")}
+        onExport={handleExport}
         footer={
           meta ? (
             <PaginationBar
@@ -136,6 +157,17 @@ export function ExpensesPage() {
           ) : null
         }
       >
+        <div className="filter-bar" style={{ marginBottom: 12 }}>
+          <label>
+            {t("expenses.paymentStatus")}
+            <select value={paymentStatusFilter} onChange={(e) => { setPaymentStatusFilter(e.target.value); setPage(1); }}>
+              <option value="">{t("common.all")}</option>
+              <option value="paid">{t("status.paid")}</option>
+              <option value="unpaid">{t("status.unpaid")}</option>
+            </select>
+          </label>
+          {paymentStatusFilter ? <button className="ghost-button" type="button" onClick={() => { setPaymentStatusFilter(""); setPage(1); }}>{t("common.cancel")}</button> : null}
+        </div>
         <table>
           <thead>
             <tr>
@@ -215,19 +247,13 @@ export function ExpensesPage() {
             </label>
             <label>
               {t("expenses.form.category")} <span style={{ color: "#b42318" }}>*</span>
-              <select
-                required
+              <SearchableSelect
                 value={form.categoryId}
-                onChange={(event) => setForm({ ...form, categoryId: event.target.value })}
-                aria-invalid={Boolean(fieldError)}
-              >
-                <option value="">{t("common.none")}</option>
-                {(categoriesQuery.data?.data ?? []).map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setForm({ ...form, categoryId: v })}
+                options={(categoriesQuery.data?.data ?? []).map((category) => ({ value: category.id, label: category.name }))}
+                placeholder={t("common.none")}
+                required
+              />
               {fieldError ? <span style={{ color: "#b42318", fontSize: 12 }}>{fieldError}</span> : null}
             </label>
             <label>
@@ -260,18 +286,13 @@ export function ExpensesPage() {
               <>
                 <label>
                   {t("expenses.form.safe")}
-                  <select
-                    required
+                  <SearchableSelect
                     value={form.safeId}
-                    onChange={(event) => setForm({ ...form, safeId: event.target.value })}
-                  >
-                    <option value="">{t("common.select")}</option>
-                    {(safesQuery.data?.data ?? []).map((safe) => (
-                      <option key={safe.id} value={safe.id}>
-                        {safe.name} ({formatMoney(safe.currentBalanceMinor)})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setForm({ ...form, safeId: v })}
+                    options={(safesQuery.data?.data ?? []).map((safe) => ({ value: safe.id, label: `${safe.name} (${formatMoney(safe.currentBalanceMinor)})` }))}
+                    placeholder={t("common.select")}
+                    required
+                  />
                 </label>
                 <label>
                   {t("expenses.form.paymentMethod")}

@@ -8,6 +8,7 @@ import {
   showToast,
   useDebouncedValue
 } from "../components/ListPageShell";
+import { SearchableSelect } from "../components/SearchableSelect";
 import { useI18n } from "../i18n";
 import {
   formatMoney,
@@ -248,19 +249,13 @@ export function SupplierPaymentsPage() {
             {error ? <p className="form-error">{error}</p> : null}
             <label>
               {t("supplierPayments.form.supplier")} <span style={{ color: "#b42318" }}>*</span>
-              <select
-                required
+              <SearchableSelect
                 value={form.supplierId}
-                onChange={(event) => setForm({ ...form, supplierId: event.target.value })}
-                aria-invalid={Boolean(fieldError)}
-              >
-                <option value="">{t("common.select")}</option>
-                {(suppliersQuery.data?.data ?? []).map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>
-                    {supplier.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setForm({ ...form, supplierId: v })}
+                options={(suppliersQuery.data?.data ?? []).map((supplier) => ({ value: supplier.id, label: supplier.name }))}
+                placeholder={t("common.select")}
+                required
+              />
               {fieldError ? <span style={{ color: "#b42318", fontSize: 12 }}>{fieldError}</span> : null}
             </label>
             <label>
@@ -289,19 +284,13 @@ export function SupplierPaymentsPage() {
             </label>
             <label>
               {t("supplierPayments.form.safe")} <span style={{ color: "#b42318" }}>*</span>
-              <select
-                required
+              <SearchableSelect
                 value={form.safeId}
-                onChange={(event) => setForm({ ...form, safeId: event.target.value })}
-                aria-invalid={Boolean(fieldError)}
-              >
-                <option value="">{t("common.select")}</option>
-                {(safesQuery.data?.data ?? []).map((safe) => (
-                  <option key={safe.id} value={safe.id}>
-                    {safe.name} ({formatMoney(safe.currentBalanceMinor)})
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setForm({ ...form, safeId: v })}
+                options={(safesQuery.data?.data ?? []).map((safe) => ({ value: safe.id, label: `${safe.name} (${formatMoney(safe.currentBalanceMinor)})` }))}
+                placeholder={t("common.select")}
+                required
+              />
               {fieldError ? <span style={{ color: "#b42318", fontSize: 12 }}>{fieldError}</span> : null}
             </label>
             <label>

@@ -9,6 +9,7 @@ import {
   StatusPill,
   useDebouncedValue
 } from "../components/ListPageShell";
+import { SearchableSelect } from "../components/SearchableSelect";
 import { useI18n } from "../i18n";
 import {
   formatMoney,
@@ -250,18 +251,13 @@ export function CustomerPaymentsPage() {
             {error ? <p className="form-error">{error}</p> : null}
             <label>
               {t("customerPayments.form.customer")}
-              <select
-                required
+              <SearchableSelect
                 value={form.customerId}
-                onChange={(event) => setForm({ ...form, customerId: event.target.value })}
-              >
-                <option value="">{t("common.select")}</option>
-                {(customersQuery.data?.data ?? []).map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.companyName}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setForm({ ...form, customerId: v })}
+                options={(customersQuery.data?.data ?? []).map((customer) => ({ value: customer.id, label: customer.companyName }))}
+                placeholder={t("common.select")}
+                required
+              />
             </label>
             <label>
               {t("customerPayments.form.paymentDate")}
@@ -287,18 +283,13 @@ export function CustomerPaymentsPage() {
             </label>
             <label>
               {t("customerPayments.form.safe")}
-              <select
-                required
+              <SearchableSelect
                 value={form.safeId}
-                onChange={(event) => setForm({ ...form, safeId: event.target.value })}
-              >
-                <option value="">{t("common.select")}</option>
-                {(safesQuery.data?.data ?? []).map((safe) => (
-                  <option key={safe.id} value={safe.id}>
-                    {safe.name} ({formatMoney(safe.currentBalanceMinor)})
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setForm({ ...form, safeId: v })}
+                options={(safesQuery.data?.data ?? []).map((safe) => ({ value: safe.id, label: `${safe.name} (${formatMoney(safe.currentBalanceMinor)})` }))}
+                placeholder={t("common.select")}
+                required
+              />
             </label>
             <label>
               {t("customerPayments.form.paymentMethod")}

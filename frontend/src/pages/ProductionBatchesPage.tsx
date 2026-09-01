@@ -9,6 +9,7 @@ import {
   StatusPill,
   useDebouncedValue
 } from "../components/ListPageShell";
+import { SearchableSelect } from "../components/SearchableSelect";
 import { useI18n } from "../i18n";
 import { formatMoney, listMaterials, listModels, listModelVariants } from "../lib/master-data";
 import {
@@ -409,19 +410,13 @@ export function ProductionBatchesPage() {
             {error ? <p className="form-error">{error}</p> : null}
             <label>
               {t("production.form.model")} <span style={{ color: "#b42318" }}>*</span>
-              <select
-                required
+              <SearchableSelect
                 value={form.modelId}
-                onChange={(event) => setForm({ ...form, modelId: event.target.value })}
-                aria-invalid={Boolean(fieldError)}
-              >
-                <option value="">{t("common.select")}</option>
-                {(modelsQuery.data?.data ?? []).map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.modelCode} - {model.modelName}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setForm({ ...form, modelId: v })}
+                options={(modelsQuery.data?.data ?? []).map((model) => ({ value: model.id, label: `${model.modelCode} - ${model.modelName}` }))}
+                placeholder={t("common.select")}
+                required
+              />
               {fieldError ? <span style={{ color: "#b42318", fontSize: 12 }}>{fieldError}</span> : null}
             </label>
             <label>
@@ -452,22 +447,20 @@ export function ProductionBatchesPage() {
               <p dir="ltr" style={{ fontWeight: 600 }}>Total qty: {totalConsumptionQty}</p>
               {consumptions.map((line, index) => (
                 <div className="line-item-row" key={line.key}>
-                  <select
-                    required={index === 0}
+                  <SearchableSelect
                     value={line.materialId}
-                    onChange={(event) => {
+                    onChange={(v) => {
                       const next = [...consumptions];
-                      next[index] = { ...line, materialId: event.target.value };
+                      next[index] = { ...line, materialId: v };
                       setConsumptions(next);
                     }}
-                  >
-                    <option value="">{t("production.form.material")}</option>
-                    {(materialsQuery.data?.data ?? []).map((material) => (
-                      <option key={material.id} value={material.id}>
-                        {material.name} ({material.currentQuantity} {material.unit})
-                      </option>
-                    ))}
-                  </select>
+                    options={(materialsQuery.data?.data ?? []).map((material) => ({
+                      value: material.id,
+                      label: `${material.name} (${material.currentQuantity} ${material.unit})`
+                    }))}
+                    placeholder={t("production.form.material")}
+                    required={index === 0}
+                  />
                   <input
                     dir="ltr"
                     min="0.01"
@@ -505,22 +498,20 @@ export function ProductionBatchesPage() {
               <legend>{t("production.form.outputs")}</legend>
               {outputs.map((line, index) => (
                 <div className="line-item-row" key={line.key}>
-                  <select
-                    required={index === 0}
+                  <SearchableSelect
                     value={line.modelVariantId}
-                    onChange={(event) => {
+                    onChange={(v) => {
                       const next = [...outputs];
-                      next[index] = { ...line, modelVariantId: event.target.value };
+                      next[index] = { ...line, modelVariantId: v };
                       setOutputs(next);
                     }}
-                  >
-                    <option value="">{t("finished.variant")}</option>
-                    {(variantsQuery.data ?? []).map((variant) => (
-                      <option key={variant.id} value={variant.id}>
-                        {variant.sizeName} / {variant.colorName}
-                      </option>
-                    ))}
-                  </select>
+                    options={(variantsQuery.data ?? []).map((variant) => ({
+                      value: variant.id,
+                      label: `${variant.sizeName} / ${variant.colorName}`
+                    }))}
+                    placeholder={t("finished.variant")}
+                    required={index === 0}
+                  />
                   <input
                     dir="ltr"
                     min="1"
@@ -858,10 +849,12 @@ export function ProductionBatchesPage() {
               <legend>{t("production.form.consumptions")}</legend>
               {editConsumptions.map((line, idx) => (
                 <div className="line-item-row" key={line.key}>
-                  <select value={line.materialId} onChange={(e) => { const n=[...editConsumptions]; n[idx]={...line, materialId:e.target.value}; setEditConsumptions(n); }}>
-                    <option value="">{t("production.form.material")}</option>
-                    {(materialsQuery.data?.data ?? []).map((m) => <option key={m.id} value={m.id}>{m.name} ({m.currentQuantity})</option>)}
-                  </select>
+                  <SearchableSelect
+                    value={line.materialId}
+                    onChange={(v) => { const n=[...editConsumptions]; n[idx]={...line, materialId:v}; setEditConsumptions(n); }}
+                    options={(materialsQuery.data?.data ?? []).map((m) => ({ value: m.id, label: `${m.name} (${m.currentQuantity})` }))}
+                    placeholder={t("production.form.material")}
+                  />
                   <input dir="ltr" type="number" min={0.01} step={0.01} value={line.quantity} onChange={(e)=>{const n=[...editConsumptions]; n[idx]={...line, quantity:Number(e.target.value)}; setEditConsumptions(n);}} />
                   <button className="ghost-button" type="button" onClick={()=>setEditConsumptions(editConsumptions.filter(r=>r.key!==line.key))}>{t("common.delete")}</button>
                 </div>
@@ -873,10 +866,12 @@ export function ProductionBatchesPage() {
               <legend>{t("production.form.outputs")}</legend>
               {editOutputs.map((line, idx) => (
                 <div className="line-item-row" key={line.key}>
-                  <select value={line.modelVariantId} onChange={(e)=>{const n=[...editOutputs]; n[idx]={...line, modelVariantId:e.target.value}; setEditOutputs(n);}} style={{flex:1}}>
-                    <option value="">{t("finished.variant")}</option>
-                    {(variantsQuery.data ?? []).map((v) => <option key={v.id} value={v.id}>{v.sizeName} / {v.colorName}</option>)}
-                  </select>
+                  <SearchableSelect
+                    value={line.modelVariantId}
+                    onChange={(v)=>{const n=[...editOutputs]; n[idx]={...line, modelVariantId:v}; setEditOutputs(n);}}
+                    options={(variantsQuery.data ?? []).map((v) => ({ value: v.id, label: `${v.sizeName} / ${v.colorName}` }))}
+                    placeholder={t("finished.variant")}
+                  />
                   <input dir="ltr" type="number" min={1} value={line.goodQuantity} onChange={(e)=>{const n=[...editOutputs]; n[idx]={...line, goodQuantity:Number(e.target.value)}; setEditOutputs(n);}} />
                   <button className="ghost-button" type="button" onClick={()=>setEditOutputs(editOutputs.filter(r=>r.key!==line.key))}>{t("common.delete")}</button>
                 </div>

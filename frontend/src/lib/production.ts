@@ -57,6 +57,7 @@ export type FinishedInventoryRow = {
   colorName: string;
   currentQuantity: number;
   currentAverageCostMinor: number;
+  safetyThreshold: number;
   updatedAt?: string;
 };
 

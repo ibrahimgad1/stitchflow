@@ -188,6 +188,7 @@ modelsRouter.get("/models/:id/variants", (req, res) => {
              mv.color_id AS colorId, colors.name AS colorName,
              mv.current_quantity AS currentQuantity,
              mv.current_average_cost_minor AS currentAverageCostMinor,
+             mv.safety_threshold AS safetyThreshold,
              mv.is_active AS isActive,
              mv.created_at AS createdAt, mv.updated_at AS updatedAt
       FROM model_variants mv
@@ -250,6 +251,21 @@ modelsRouter.post("/models/:id/variants", (req, res) => {
   } catch {
     res.status(409).json({ statusCode: 409, message: "Variant already exists for this model" });
   }
+});
+
+modelsRouter.put("/model-variants/:id/threshold", (req, res) => {
+  const parsed = z.object({ safetyThreshold: z.number().min(0) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ statusCode: 400, message: "Invalid threshold" });
+    return;
+  }
+  const db = getDatabase();
+  const result = db.prepare("UPDATE model_variants SET safety_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(parsed.data.safetyThreshold, req.params.id);
+  if (result.changes === 0) {
+    res.status(404).json({ statusCode: 404, message: "Variant not found" });
+    return;
+  }
+  res.json({ id: req.params.id, safetyThreshold: parsed.data.safetyThreshold });
 });
 
 modelsRouter.put("/model-variants/:id", (req, res) => {

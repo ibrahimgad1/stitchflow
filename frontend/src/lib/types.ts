@@ -35,6 +35,7 @@ export type Material = {
   unit: string;
   currentQuantity: number;
   weightedAverageCostMinor: number;
+  safetyThreshold: number;
   supplierId?: string | null;
   supplierName?: string | null;
   notes?: string | null;

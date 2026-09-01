@@ -59,6 +59,7 @@ finishedInventoryRouter.get("/finished-inventory", (req, res) => {
              colors.name AS colorName,
              model_variants.current_quantity AS currentQuantity,
              model_variants.current_average_cost_minor AS currentAverageCostMinor,
+             model_variants.safety_threshold AS safetyThreshold,
              model_variants.updated_at AS updatedAt
       FROM model_variants
       JOIN models ON models.id = model_variants.model_id

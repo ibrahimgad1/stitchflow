@@ -21,11 +21,30 @@ export type CostComponentInput = {
   notes?: string | null;
 };
 
+export const PRODUCTION_STAGES = [
+  "draft",
+  "cutting",
+  "sewing",
+  "finishing",
+  "completed"
+] as const;
+
+export type ProductionStage = (typeof PRODUCTION_STAGES)[number];
+
+const STAGE_INDEX: Record<ProductionStage, number> = {
+  draft: 0,
+  cutting: 1,
+  sewing: 2,
+  finishing: 3,
+  completed: 4
+};
+
 type BatchRow = {
   id: string;
   batchNumber: string;
   modelId: string;
   status: string;
+  stage: ProductionStage;
   plannedQuantity: number;
   goodQuantity: number;
   damagedQuantity: number;

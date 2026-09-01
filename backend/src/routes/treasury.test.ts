@@ -290,6 +290,8 @@ describe("treasury routes", () => {
 
   it("returns treasury report totals across safe movements", async () => {
     const safeId = await createSafe(100);
+    const db = getDatabase();
+    db.prepare("UPDATE safe_transactions SET transaction_date = '2026-08-30' WHERE safe_id = ?").run(safeId);
     const ownerId = await createOwner();
 
     await request(app)

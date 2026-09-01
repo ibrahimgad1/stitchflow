@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   EmptyState,
   ListPageShell,
@@ -8,6 +9,7 @@ import {
   showToast,
   useDebouncedValue
 } from "../components/ListPageShell";
+import { SearchableSelect } from "../components/SearchableSelect";
 import { useI18n } from "../i18n";
 import { formatMoney, listMaterials, listSafes, listSuppliers } from "../lib/master-data";
 import {
@@ -39,6 +41,7 @@ const emptyForm = {
 export function MaterialReceivingsPage() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const location = useLocation() as { state?: { materialId?: string; shortage?: number; supplierId?: string | null } };
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState("");
@@ -50,9 +53,25 @@ export function MaterialReceivingsPage() {
   const [error, setError] = useState("");
   const [fieldError, setFieldError] = useState("");
 
+  useEffect(() => {
+    const state = location.state;
+    if (state?.materialId) {
+      setForm((prev) => ({
+        ...prev,
+        supplierId: state.supplierId || prev.supplierId,
+        receivingDate: new Date().toISOString().slice(0, 10)
+      }));
+      setLines([{ key: crypto.randomUUID(), materialId: state.materialId, quantity: Math.ceil(state.shortage || 10), unitPrice: 0 }]);
+      setCreateOpen(true);
+      // Clear state to prevent re-trigger
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
+
+  const [supplierFilter, setSupplierFilter] = useState("");
   const receivingsQuery = useQuery({
-    queryKey: ["material-receivings", page, pageSize, debouncedSearch],
-    queryFn: () => listMaterialReceivings({ page, pageSize, search: debouncedSearch })
+    queryKey: ["material-receivings", page, pageSize, debouncedSearch, supplierFilter],
+    queryFn: () => listMaterialReceivings({ page, pageSize, search: debouncedSearch, supplierId: supplierFilter || undefined })
   });
 
   const suppliersQuery = useQuery({
@@ -165,6 +184,16 @@ export function MaterialReceivingsPage() {
           ) : null
         }
       >
+        <div className="filter-bar" style={{ marginBottom: 12 }}>
+          <label>
+            {t("receivings.supplier")}
+            <select value={supplierFilter} onChange={(e) => { setSupplierFilter(e.target.value); setPage(1); }}>
+              <option value="">{t("common.all")}</option>
+              {(suppliersQuery.data?.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </label>
+          {(supplierFilter) ? <button className="ghost-button" type="button" onClick={() => { setSupplierFilter(""); setPage(1); }}>{t("common.cancel")}</button> : null}
+        </div>
         <table>
           <thead>
             <tr>
@@ -232,19 +261,13 @@ export function MaterialReceivingsPage() {
             {error ? <p className="form-error">{error}</p> : null}
             <label>
               {t("receivings.form.supplier")} <span style={{ color: "#b42318" }}>*</span>
-              <select
-                required
+              <SearchableSelect
                 value={form.supplierId}
-                onChange={(event) => setForm({ ...form, supplierId: event.target.value })}
-                aria-invalid={Boolean(fieldError)}
-              >
-                <option value="">{t("common.select")}</option>
-                {(suppliersQuery.data?.data ?? []).map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>
-                    {supplier.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setForm({ ...form, supplierId: v })}
+                options={(suppliersQuery.data?.data ?? []).map((supplier) => ({ value: supplier.id, label: supplier.name }))}
+                placeholder={t("common.select")}
+                required
+              />
               {fieldError ? <span style={{ color: "#b42318", fontSize: 12 }}>{fieldError}</span> : null}
             </label>
             <label>
@@ -281,22 +304,17 @@ export function MaterialReceivingsPage() {
                 <div className="inline-form" key={line.key}>
                   <label>
                     {t("materials.name")}
-                    <select
-                      required
+                    <SearchableSelect
                       value={line.materialId}
-                      onChange={(event) => {
+                      onChange={(v) => {
                         const next = [...lines];
-                        next[index] = { ...line, materialId: event.target.value };
+                        next[index] = { ...line, materialId: v };
                         setLines(next);
                       }}
-                    >
-                      <option value="">{t("common.select")}</option>
-                      {(materialsQuery.data?.data ?? []).map((material) => (
-                        <option key={material.id} value={material.id}>
-                          {material.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={(materialsQuery.data?.data ?? []).map((material) => ({ value: material.id, label: material.name }))}
+                      placeholder={t("common.select")}
+                      required
+                    />
                   </label>
                   <label>
                     {t("receivings.quantity")}
@@ -369,18 +387,13 @@ export function MaterialReceivingsPage() {
             {form.paidAmount ? (
               <label>
                 {t("receivings.form.safe")}
-                <select
-                  required
+                <SearchableSelect
                   value={form.safeId}
-                  onChange={(event) => setForm({ ...form, safeId: event.target.value })}
-                >
-                  <option value="">{t("common.select")}</option>
-                  {(safesQuery.data?.data ?? []).map((safe) => (
-                    <option key={safe.id} value={safe.id}>
-                      {safe.name} ({formatMoney(safe.currentBalanceMinor)})
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setForm({ ...form, safeId: v })}
+                  options={(safesQuery.data?.data ?? []).map((safe) => ({ value: safe.id, label: `${safe.name} (${formatMoney(safe.currentBalanceMinor)})` }))}
+                  placeholder={t("common.select")}
+                  required
+                />
               </label>
             ) : null}
             <label>

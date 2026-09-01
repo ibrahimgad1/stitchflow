@@ -12,6 +12,7 @@ import { exportRowsToExcel, moneyMinorToMajor } from "../lib/export-excel";
 import { formatMoney } from "../lib/master-data";
 import { calculateOverheadPeriod, createOverheadPeriod, getOverheadPeriod, listOverheadPeriods } from "../lib/overhead";
 import { getProductionCostReport } from "../lib/reports";
+import { DatePresets } from "../components/DatePresets";
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -158,39 +159,45 @@ export function ProductionCostReportsPage() {
         ) : null
       }
     >
-      <form className="toolbar" onSubmit={(event) => event.preventDefault()}>
-        <label>
-          {t("reports.dateFrom")}
-          <input
-            dir="ltr"
-            type="date"
-            value={dateFrom}
-            onChange={(event) => {
-              setDateFrom(event.target.value);
-              setPage(1);
-            }}
-          />
-        </label>
-        <label>
-          {t("reports.dateTo")}
-          <input
-            dir="ltr"
-            type="date"
-            value={dateTo}
-            onChange={(event) => {
-              setDateTo(event.target.value);
-              setPage(1);
-            }}
-          />
-        </label>
-        <button className="ghost-button" type="button" onClick={() => setPage(1)}>
-          {t("common.apply") !== "common.apply" ? t("common.apply") : "Apply"}
-        </button>
-        <button className="primary-button" type="button" disabled={isExporting} onClick={handleExport}>
-          <Download aria-hidden="true" />
-          {isExporting ? t("common.loading") : t("reports.export")}
-        </button>
-      </form>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <DatePresets
+          onSelect={(from, to) => {
+            setDateFrom(from);
+            setDateTo(to);
+            setPage(1);
+          }}
+        />
+        <form className="toolbar" onSubmit={(event) => event.preventDefault()}>
+          <label>
+            {t("reports.dateFrom")}
+            <input
+              dir="ltr"
+              type="date"
+              value={dateFrom}
+              onChange={(event) => {
+                setDateFrom(event.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+          <label>
+            {t("reports.dateTo")}
+            <input
+              dir="ltr"
+              type="date"
+              value={dateTo}
+              onChange={(event) => {
+                setDateTo(event.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+          <button className="primary-button" type="button" disabled={isExporting} onClick={handleExport}>
+            <Download aria-hidden="true" />
+            {isExporting ? t("common.loading") : t("reports.export")}
+          </button>
+        </form>
+      </div>
 
       <div className="summary-strip">
         <div>

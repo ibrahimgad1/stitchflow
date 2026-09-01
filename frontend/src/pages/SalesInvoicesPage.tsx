@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FormEvent, useState } from "react";
+import { FormEvent, KeyboardEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   EmptyState,
@@ -10,7 +10,9 @@ import {
   StatusPill,
   useDebouncedValue
 } from "../components/ListPageShell";
+import { SearchableSelect } from "../components/SearchableSelect";
 import { useI18n } from "../i18n";
+import { exportToCsv } from "../lib/export";
 import { formatMoney, listCustomers } from "../lib/master-data";
 import { listFinishedInventory } from "../lib/production";
 import {
@@ -47,6 +49,8 @@ export function SalesInvoicesPage() {
   const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [customerFilter, setCustomerFilter] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -54,9 +58,23 @@ export function SalesInvoicesPage() {
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
 
+  const [balanceCustomerId, setBalanceCustomerId] = useState<string | null>(null);
   const invoicesQuery = useQuery({
-    queryKey: ["sales-invoices", page, pageSize, debouncedSearch],
-    queryFn: () => listSalesInvoices({ page, pageSize, search: debouncedSearch })
+    queryKey: ["sales-invoices", page, pageSize, debouncedSearch, statusFilter, customerFilter],
+    queryFn: () => listSalesInvoices({ page, pageSize, search: debouncedSearch, status: statusFilter || undefined, customerId: customerFilter || undefined })
+  });
+
+  const customerBalanceQuery = useQuery({
+    queryKey: ["customer-balance", balanceCustomerId],
+    queryFn: async () => {
+      if (!balanceCustomerId) return null;
+      const res = await fetch(`/api/customers/${balanceCustomerId}/ledger?page=1&pageSize=1`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("auth.token")}` }
+      });
+      const data = await res.json();
+      return data.balanceMinor as number;
+    },
+    enabled: Boolean(balanceCustomerId)
   });
 
   const customersQuery = useQuery({
@@ -109,37 +127,39 @@ export function SalesInvoicesPage() {
       setForm(emptyForm);
       setItems([emptyItem()]);
       setError("");
-      showToast(t("common.save") + " ✓");
+      showToast(t("sales.add") + " ✓");
     },
-    onError: () => setError(t("sales.form.error"))
+    onError: (e: unknown) => {
+      setError(e instanceof Error ? e.message : t("sales.form.error"));
+    }
   });
 
   const confirmMutation = useMutation({
-    mutationFn: (invoiceId: string) => confirmSalesInvoice(invoiceId),
+    mutationFn: async (id: string) => confirmSalesInvoice(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["sales-invoices"] });
+      await queryClient.invalidateQueries({ queryKey: ["sales-invoice", detailId] });
       await queryClient.invalidateQueries({ queryKey: ["finished-inventory"] });
-      if (detailId) {
-        await queryClient.invalidateQueries({ queryKey: ["sales-invoice", detailId] });
-      }
       setActionError("");
-      showToast(t("common.save") + " ✓");
+      showToast(t("sales.confirm") + " ✓");
     },
-    onError: () => setActionError(t("sales.details.errorConfirm"))
+    onError: (e: unknown) => {
+      setActionError(e instanceof Error ? e.message : t("sales.confirmError"));
+    }
   });
 
   const cancelMutation = useMutation({
-    mutationFn: (invoiceId: string) => cancelSalesInvoice(invoiceId),
+    mutationFn: async (id: string) => cancelSalesInvoice(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["sales-invoices"] });
+      await queryClient.invalidateQueries({ queryKey: ["sales-invoice", detailId] });
       await queryClient.invalidateQueries({ queryKey: ["finished-inventory"] });
-      if (detailId) {
-        await queryClient.invalidateQueries({ queryKey: ["sales-invoice", detailId] });
-      }
       setActionError("");
-      showToast(t("common.save") + " ✓");
+      showToast(t("sales.cancel") + " ✓");
     },
-    onError: () => setActionError(t("sales.details.errorCancel"))
+    onError: (e: unknown) => {
+      setActionError(e instanceof Error ? e.message : t("sales.cancelError"));
+    }
   });
 
   const rows = invoicesQuery.data?.data ?? [];
@@ -147,9 +167,58 @@ export function SalesInvoicesPage() {
   const detail = detailQuery.data;
   const stockRows = stockQuery.data?.data ?? [];
 
+  const handleEnterNext = (e: KeyboardEvent<HTMLInputElement>, index: number, field: "quantity" | "unitPrice") => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (field === "quantity") {
+      const rowsEls = document.querySelectorAll(".line-row");
+      const row = rowsEls[index] as HTMLElement | undefined;
+      const inputs = row?.querySelectorAll("input");
+      const unitPriceInput = inputs?.[1] as HTMLInputElement | undefined;
+      unitPriceInput?.focus();
+    } else {
+      const rowsEls = document.querySelectorAll(".line-row");
+      if (index + 1 < rowsEls.length) {
+        const nextRow = rowsEls[index + 1] as HTMLElement;
+        const nextInput = nextRow.querySelector("input") as HTMLInputElement | null;
+        nextInput?.focus();
+      } else {
+        const newItems = [...items, emptyItem()];
+        setItems(newItems);
+        setTimeout(() => {
+          const updatedRows = document.querySelectorAll(".line-row");
+          const lastRow = updatedRows[updatedRows.length - 1] as HTMLElement | undefined;
+          const lastInput = lastRow?.querySelector("input") as HTMLInputElement | null;
+          lastInput?.focus();
+        }, 0);
+      }
+    }
+  };
+
   function openCreate() {
-    setCreateOpen(true);
+    setForm(emptyForm);
+    setItems([emptyItem()]);
     setError("");
+    setCreateOpen(true);
+  }
+
+  function handleExport() {
+    exportToCsv<any>(
+      "فواتير-المبيعات",
+      [
+        { header: "رقم الفاتورة", accessor: (i) => i.invoiceNumber },
+        { header: "العميل", accessor: (i) => i.customerName },
+        { header: "تاريخ الفاتورة", accessor: (i) => i.invoiceDate },
+        { header: "تاريخ الاستحقاق", accessor: (i) => i.dueDate || "-" },
+        { header: "الحالة", accessor: (i) => (i.status === "confirmed" ? "مؤكدة" : i.status === "cancelled" ? "ملغاة" : "مسودة") },
+        { header: "إجمالي البنود (ج.م)", accessor: (i) => ((i.subtotalMinor || 0) / 100).toFixed(2) },
+        { header: "الخصم (ج.م)", accessor: (i) => ((i.discountMinor || 0) / 100).toFixed(2) },
+        { header: "الصافي النهائي (ج.م)", accessor: (i) => ((i.totalAmountMinor || 0) / 100).toFixed(2) },
+        { header: "المدفوع (ج.م)", accessor: (i) => ((i.paidAmountMinor || 0) / 100).toFixed(2) },
+        { header: "المتبقي (ج.م)", accessor: (i) => ((i.remainingAmountMinor || 0) / 100).toFixed(2) }
+      ],
+      rows
+    );
   }
 
   return (
@@ -164,6 +233,7 @@ export function SalesInvoicesPage() {
         }}
         onCreate={openCreate}
         createLabel={t("sales.add")}
+        onExport={handleExport}
         footer={
           meta ? (
             <PaginationBar
@@ -177,6 +247,25 @@ export function SalesInvoicesPage() {
           ) : null
         }
       >
+        <div className="filter-bar" style={{ marginBottom: 12 }}>
+          <label>
+            {t("sales.status")}
+            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
+              <option value="">{t("common.all")}</option>
+              <option value="draft">{t("status.draft")}</option>
+              <option value="confirmed">{t("status.confirmed")}</option>
+              <option value="cancelled">{t("status.cancelled")}</option>
+            </select>
+          </label>
+          <label>
+            {t("sales.customer")}
+            <select value={customerFilter} onChange={(e) => { setCustomerFilter(e.target.value); setPage(1); }}>
+              <option value="">{t("common.all")}</option>
+              {(customersQuery.data?.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+            </select>
+          </label>
+          {(statusFilter || customerFilter) ? <button className="ghost-button" type="button" onClick={() => { setStatusFilter(""); setCustomerFilter(""); setPage(1); }}>{t("common.cancel")}</button> : null}
+        </div>
         <table>
           <thead>
             <tr>
@@ -239,18 +328,33 @@ export function SalesInvoicesPage() {
             {error ? <p className="form-error">{error}</p> : null}
             <label>
               {t("sales.form.customer")}
-              <select
-                required
+              <SearchableSelect
                 value={form.customerId}
-                onChange={(event) => setForm({ ...form, customerId: event.target.value })}
-              >
-                <option value="">{t("common.select")}</option>
-                {(customersQuery.data?.data ?? []).map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.companyName}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => {
+                  setForm({ ...form, customerId: v });
+                  setBalanceCustomerId(v || null);
+                }}
+                options={(customersQuery.data?.data ?? []).map((c) => ({ value: c.id, label: c.companyName }))}
+                placeholder={t("common.select")}
+                required
+              />
+              {balanceCustomerId && customerBalanceQuery.data !== undefined && customerBalanceQuery.data !== null ? (
+                <span
+                  style={{
+                    display: "inline-block",
+                    marginTop: 6,
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: (customerBalanceQuery.data ?? 0) > 0 ? "#fef3c7" : "#ecfdf5",
+                    color: (customerBalanceQuery.data ?? 0) > 0 ? "#92400e" : "#065f46",
+                    border: `1px solid ${(customerBalanceQuery.data ?? 0) > 0 ? "#fcd34d" : "#a7f3d0"}`
+                  }}
+                >
+                  الرصيد الحالي: {formatMoney(customerBalanceQuery.data ?? 0)} {(customerBalanceQuery.data ?? 0) > 0 ? "(مدين — له متأخرات)" : "(لا يوجد متأخرات)"}
+                </span>
+              ) : null}
             </label>
             <label>
               {t("sales.form.invoiceDate")}
@@ -299,77 +403,134 @@ export function SalesInvoicesPage() {
             </label>
 
             <div className="full-span line-editor">
-              <div className="line-editor-header">
+              <div className="line-editor-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                 <strong>{t("sales.form.items")}</strong>
-                <button type="button" onClick={() => setItems([...items, emptyItem()])}>
-                  {t("sales.form.addItem")}
+                <button className="ghost-button" type="button" onClick={() => setItems([...items, emptyItem()])}>
+                  + {t("sales.form.addItem")}
                 </button>
               </div>
-              {items.map((item, index) => (
-                <div className="line-row" key={item.key}>
-                  <select
-                    required
-                    value={item.modelVariantId}
-                    onChange={(event) =>
-                      setItems(
-                        items.map((row) =>
-                          row.key === item.key ? { ...row, modelVariantId: event.target.value } : row
+              {items.map((item, index) => {
+                const lineTotal = (item.quantity || 0) * (item.unitPrice || 0);
+                return (
+                  <div className="line-row" key={item.key} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: "8px", alignItems: "center", marginBottom: "8px" }}>
+                    <select
+                      required
+                      value={item.modelVariantId}
+                      onChange={(event) =>
+                        setItems(
+                          items.map((row) =>
+                            row.key === item.key ? { ...row, modelVariantId: event.target.value } : row
+                          )
                         )
-                      )
-                    }
-                  >
-                    <option value="">{t("sales.form.selectItem")}</option>
-                    {stockRows.map((stock) => (
-                      <option key={stock.id} value={stock.id}>
-                        {stock.modelCode} - {stock.modelName} / {stock.sizeName} / {stock.colorName} ({stock.currentQuantity})
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    aria-label={`${t("sales.form.quantity")} ${index + 1}`}
-                    dir="ltr"
-                    min="0.01"
-                    step="0.01"
-                    type="number"
-                    placeholder={t("sales.form.quantity")}
-                    value={item.quantity}
-                    onChange={(event) =>
-                      setItems(
-                        items.map((row) =>
-                          row.key === item.key ? { ...row, quantity: Number(event.target.value) } : row
+                      }
+                    >
+                      <option value="">{t("sales.form.selectItem")}</option>
+                      {stockRows.map((stock) => (
+                        <option key={stock.id} value={stock.id}>
+                          {stock.modelCode} - {stock.modelName} / {stock.sizeName} / {stock.colorName} ({stock.currentQuantity})
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label={`${t("sales.form.quantity")} ${index + 1}`}
+                      dir="ltr"
+                      min="0.01"
+                      step="0.01"
+                      type="number"
+                      placeholder={t("sales.form.quantity")}
+                      value={item.quantity}
+                      onChange={(event) =>
+                        setItems(
+                          items.map((row) =>
+                            row.key === item.key ? { ...row, quantity: Number(event.target.value) } : row
+                          )
                         )
-                      )
-                    }
-                  />
-                  <input
-                    aria-label={`${t("sales.form.unitPrice")} ${index + 1}`}
-                    dir="ltr"
-                    min="0"
-                    step="0.01"
-                    type="number"
-                    placeholder={t("sales.form.unitPrice")}
-                    value={item.unitPrice}
-                    onChange={(event) =>
-                      setItems(
-                        items.map((row) =>
-                          row.key === item.key ? { ...row, unitPrice: Number(event.target.value) } : row
+                      }
+                      onKeyDown={(e) => handleEnterNext(e, index, "quantity")}
+                    />
+                    <input
+                      aria-label={`${t("sales.form.unitPrice")} ${index + 1}`}
+                      dir="ltr"
+                      min="0"
+                      step="0.01"
+                      type="number"
+                      placeholder={t("sales.form.unitPrice")}
+                      value={item.unitPrice}
+                      onChange={(event) =>
+                        setItems(
+                          items.map((row) =>
+                            row.key === item.key ? { ...row, unitPrice: Number(event.target.value) } : row
+                          )
                         )
-                      )
-                    }
-                  />
-                  <button
-                    disabled={items.length === 1}
-                    type="button"
-                    onClick={() => setItems(items.filter((row) => row.key !== item.key))}
-                  >
-                    {t("sales.form.remove")}
-                  </button>
-                </div>
-              ))}
+                      }
+                      onKeyDown={(e) => handleEnterNext(e, index, "unitPrice")}
+                    />
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--primary)", textAlign: "end" }}>
+                      {lineTotal.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م
+                    </div>
+                    <button
+                      className="ghost-button"
+                      style={{ padding: "0 8px", color: "var(--danger)" }}
+                      disabled={items.length === 1}
+                      type="button"
+                      onClick={() => setItems(items.filter((row) => row.key !== item.key))}
+                    >
+                      {t("sales.form.remove")}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
-            <button disabled={createMutation.isPending} type="submit">
-              {createMutation.isPending ? t("common.saving") : t("sales.form.save")}
-            </button>
+
+            {/* Live Invoice Totals Summary */}
+            {(() => {
+              const subtotal = items.reduce((acc, row) => acc + (Number(row.quantity) * Number(row.unitPrice) || 0), 0);
+              const discount = Number(form.discountAmount) || 0;
+              const netTotal = Math.max(0, subtotal - discount);
+              return (
+                <div
+                  className="full-span"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: "10px",
+                    background: "var(--bg)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius)",
+                    padding: "12px",
+                    marginTop: "4px"
+                  }}
+                >
+                  <div>
+                    <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>إجمالي البنود:</span>
+                    <strong style={{ display: "block", fontSize: "15px" }}>
+                      {subtotal.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>الخصم الممنوح:</span>
+                    <strong style={{ display: "block", fontSize: "15px", color: "#dc2626" }}>
+                      {discount.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: "12px", color: "var(--primary)" }}>الصافي النهائي:</span>
+                    <strong style={{ display: "block", fontSize: "17px", color: "var(--primary)" }}>
+                      {netTotal.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م
+                    </strong>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="form-actions full-span">
+              <button className="ghost-button" type="button" onClick={() => setCreateOpen(false)}>
+                {t("common.cancel") || "إلغاء"}
+              </button>
+              <button className="primary-button" disabled={createMutation.isPending} type="submit">
+                {createMutation.isPending ? t("common.saving") : t("sales.form.save")}
+              </button>
+            </div>
           </form>
         </Modal>
       ) : null}

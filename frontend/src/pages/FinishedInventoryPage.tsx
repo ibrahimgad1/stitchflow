@@ -15,6 +15,7 @@ import {
   listFinishedInventory,
   type FinishedInventoryRow
 } from "../lib/production";
+import { updateVariantThreshold } from "../lib/alerts";
 
 export function FinishedInventoryPage() {
   const { t } = useI18n();
@@ -26,6 +27,9 @@ export function FinishedInventoryPage() {
   const [adjustRow, setAdjustRow] = useState<FinishedInventoryRow | null>(null);
   const [adjustForm, setAdjustForm] = useState({ newQuantity: "", reason: "" });
   const [adjustError, setAdjustError] = useState("");
+  const [thresholdRow, setThresholdRow] = useState<FinishedInventoryRow | null>(null);
+  const [thresholdValue, setThresholdValue] = useState("");
+  const [thresholdError, setThresholdError] = useState("");
 
   const inventoryQuery = useQuery({
     queryKey: ["finished-inventory", page, pageSize, debouncedSearch],
@@ -46,6 +50,18 @@ export function FinishedInventoryPage() {
       showToast(t("common.save") + " ✓");
     },
     onError: () => setAdjustError(t("finished.adjust.error"))
+  });
+
+  const thresholdMutation = useMutation({
+    mutationFn: async () => updateVariantThreshold(thresholdRow!.id, Number(thresholdValue)),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["finished-inventory"] });
+      setThresholdRow(null);
+      setThresholdValue("");
+      setThresholdError("");
+      showToast(t("common.save") + " ✓");
+    },
+    onError: () => setThresholdError(t("errors.couldNotSave"))
   });
 
   const rows = inventoryQuery.data?.data ?? [];
@@ -81,6 +97,7 @@ export function FinishedInventoryPage() {
               <th>{t("finished.size")}</th>
               <th>{t("finished.color")}</th>
               <th>{t("finished.stock")}</th>
+              <th>حد الأمان</th>
               <th>{t("finished.avgCost")}</th>
               <th aria-label={t("common.actions")} />
             </tr>
@@ -88,41 +105,52 @@ export function FinishedInventoryPage() {
           <tbody>
             {inventoryQuery.isLoading ? (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <div className="skeleton" style={{ height: 18 }} />
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <EmptyState title={t("finished.noStock")} description={t("finished.description")} />
                 </td>
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={row.id}>
+                <tr key={row.id} style={row.safetyThreshold > 0 && row.currentQuantity < row.safetyThreshold ? { background: "#fef2f2" } : undefined}>
                   <td>
                     {row.modelCode} - {row.modelName}
                   </td>
                   <td>{row.sizeName}</td>
                   <td>{row.colorName}</td>
-                  <td>{row.currentQuantity}</td>
+                  <td>
+                    <span style={row.safetyThreshold > 0 && row.currentQuantity < row.safetyThreshold ? { color: "#dc2626", fontWeight: 700 } : undefined}>{row.currentQuantity}</span>
+                    {row.safetyThreshold > 0 && row.currentQuantity < row.safetyThreshold ? <span style={{ color: "#dc2626", fontSize: 11, display: "block" }}>⚠️ منخفض</span> : null}
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <span>{row.safetyThreshold ?? 0}</span>
+                      <button className="link-button" style={{ fontSize: 11 }} onClick={() => { setThresholdRow(row); setThresholdValue(String(row.safetyThreshold ?? 0)); setThresholdError(""); }} type="button">تعديل</button>
+                    </div>
+                  </td>
                   <td dir="ltr">{formatMoney(row.currentAverageCostMinor)}</td>
                   <td>
-                    <button
-                      className="link-button"
-                      onClick={() => {
-                        setAdjustRow(row);
-                        setAdjustForm({
-                          newQuantity: String(row.currentQuantity),
-                          reason: ""
-                        });
-                        setAdjustError("");
-                      }}
-                      type="button"
-                    >
-                      {t("materials.actions.adjust")}
-                    </button>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        className="link-button"
+                        onClick={() => {
+                          setAdjustRow(row);
+                          setAdjustForm({
+                            newQuantity: String(row.currentQuantity),
+                            reason: ""
+                          });
+                          setAdjustError("");
+                        }}
+                        type="button"
+                      >
+                        {t("materials.actions.adjust")}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -171,6 +199,31 @@ export function FinishedInventoryPage() {
             <div className="form-actions">
               <button className="primary-button" disabled={adjustMutation.isPending} type="submit">
                 {adjustMutation.isPending ? t("common.saving") : t("finished.adjust.save")}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
+      {thresholdRow ? (
+        <Modal title={`حد الأمان - ${thresholdRow.modelCode} ${thresholdRow.sizeName}/${thresholdRow.colorName}`} onClose={() => setThresholdRow(null)}>
+          <form
+            className="form-grid"
+            onSubmit={(e) => {
+              e.preventDefault();
+              thresholdMutation.mutate();
+            }}
+          >
+            {thresholdError ? <p className="form-error">{thresholdError}</p> : null}
+            <p className="muted">الكمية الحالية: {thresholdRow.currentQuantity}</p>
+            <label>
+              حد الأمان <span style={{ color: "#b42318" }}>*</span>
+              <input required dir="ltr" type="number" min={0} step={1} value={thresholdValue} onChange={(e) => setThresholdValue(e.target.value)} />
+            </label>
+            <p className="muted" style={{ fontSize: 12 }}>اتركه 0 لإيقاف التنبيه.</p>
+            <div className="form-actions">
+              <button className="primary-button" disabled={thresholdMutation.isPending} type="submit">
+                {thresholdMutation.isPending ? t("common.saving") : t("common.save")}
               </button>
             </div>
           </form>

@@ -10,6 +10,7 @@ import {
   useDebouncedValue
 } from "../components/ListPageShell";
 import { useI18n } from "../i18n";
+import { exportToCsv } from "../lib/export";
 import {
   createCustomer,
   isActive,
@@ -113,6 +114,21 @@ export function CustomersPage() {
   const rows = customersQuery.data?.data ?? [];
   const meta = customersQuery.data?.meta;
 
+  function handleExport() {
+    exportToCsv<Customer>(
+      "قائمة-العملاء",
+      [
+        { header: "اسم الشركة / العميل", accessor: (c) => c.companyName },
+        { header: "جهة الاتصال", accessor: (c) => c.contactName || "-" },
+        { header: "رقم الهاتف", accessor: (c) => c.phone || "-" },
+        { header: "العنوان", accessor: (c) => c.address || "-" },
+        { header: "الحالة", accessor: (c) => (isActive(c.isActive) ? "نشط" : "غير نشط") },
+        { header: "ملاحظات", accessor: (c) => c.notes || "-" }
+      ],
+      rows
+    );
+  }
+
   return (
     <>
       <ListPageShell
@@ -125,6 +141,7 @@ export function CustomersPage() {
         }}
         onCreate={openCreate}
         createLabel={t("customers.add")}
+        onExport={handleExport}
         footer={
           meta ? (
             <PaginationBar

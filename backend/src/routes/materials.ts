@@ -45,6 +45,7 @@ materialsRouter.get("/materials", (req, res) => {
       SELECT materials.id, materials.name, materials.color_name AS colorName,
              materials.unit, materials.current_quantity AS currentQuantity,
              materials.weighted_average_cost_minor AS weightedAverageCostMinor,
+             materials.safety_threshold AS safetyThreshold,
              materials.supplier_id AS supplierId, suppliers.name AS supplierName,
              materials.notes, materials.is_active AS isActive,
              materials.created_at AS createdAt, materials.updated_at AS updatedAt
@@ -59,6 +60,21 @@ materialsRouter.get("/materials", (req, res) => {
   res.json(paginatedResponse(rows, total.count, params));
 });
 
+materialsRouter.put("/materials/:id/threshold", (req, res) => {
+  const parsed = z.object({ safetyThreshold: z.number().min(0) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ statusCode: 400, message: "Invalid threshold" });
+    return;
+  }
+  const db = getDatabase();
+  const result = db.prepare("UPDATE materials SET safety_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(parsed.data.safetyThreshold, req.params.id);
+  if (result.changes === 0) {
+    res.status(404).json({ statusCode: 404, message: "Material not found" });
+    return;
+  }
+  res.json({ id: req.params.id, safetyThreshold: parsed.data.safetyThreshold });
+});
+
 materialsRouter.get("/materials/:id", (req, res) => {
   const db = getDatabase();
   const material = db
@@ -66,6 +82,7 @@ materialsRouter.get("/materials/:id", (req, res) => {
       SELECT materials.id, materials.name, materials.color_name AS colorName,
              materials.unit, materials.current_quantity AS currentQuantity,
              materials.weighted_average_cost_minor AS weightedAverageCostMinor,
+             materials.safety_threshold AS safetyThreshold,
              materials.supplier_id AS supplierId, suppliers.name AS supplierName,
              materials.notes, materials.is_active AS isActive,
              materials.created_at AS createdAt, materials.updated_at AS updatedAt
