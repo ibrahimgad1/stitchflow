@@ -18,11 +18,13 @@ function authHeader(): string {
 
 function setupAuthUser(): void {
   const db = getDatabase();
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO users (id, username, display_name, password_hash, role_id)
     VALUES ('test-admin-id', 'testadmin', 'Test Admin', ?, 'role-admin')
     ON CONFLICT(id) DO NOTHING
-  `).run(bcrypt.hashSync("Test_Admin_123", 12));
+  `,
+  ).run(bcrypt.hashSync("Test_Admin_123", 12));
 }
 
 async function createSafe(openingBalance: number): Promise<string> {
@@ -47,6 +49,8 @@ describe("treasury routes", () => {
   beforeEach(() => {
     migrate();
     seed();
+    const db = getDatabase();
+    db.exec("DELETE FROM safe_transactions; DELETE FROM safes;");
     setupAuthUser();
   });
 
@@ -76,13 +80,15 @@ describe("treasury routes", () => {
         description: "Thread and needles",
         amount: 125,
         paymentStatus: "paid",
-        safeId
+        safeId,
       });
 
     expect(response.status).toBe(201);
     expect(response.body.expenseNumber).toMatch(/^EXP-/);
 
-    const safe = await request(app).get(`/api/safes/${safeId}`).set("Authorization", authHeader());
+    const safe = await request(app)
+      .get(`/api/safes/${safeId}`)
+      .set("Authorization", authHeader());
     expect(safe.body.data.currentBalanceMinor).toBe(37500);
   });
 
@@ -96,13 +102,15 @@ describe("treasury routes", () => {
         expenseDate: "2026-08-30",
         description: "Electricity bill",
         amount: 200,
-        paymentStatus: "unpaid"
+        paymentStatus: "unpaid",
       });
 
     expect(response.status).toBe(201);
     expect(response.body.paymentStatus).toBe("unpaid");
 
-    const safe = await request(app).get(`/api/safes/${safeId}`).set("Authorization", authHeader());
+    const safe = await request(app)
+      .get(`/api/safes/${safeId}`)
+      .set("Authorization", authHeader());
     expect(safe.body.data.currentBalanceMinor).toBe(50000);
   });
 
@@ -117,7 +125,7 @@ describe("treasury routes", () => {
         description: "Machine maintenance",
         amount: 75,
         paymentStatus: "paid",
-        safeId
+        safeId,
       });
 
     expect(response.status).toBe(409);
@@ -136,7 +144,7 @@ describe("treasury routes", () => {
         fromSafeId: sourceSafeId,
         toSafeId: destinationSafeId,
         amount: 175,
-        notes: "Move cash to sales desk"
+        notes: "Move cash to sales desk",
       });
 
     expect(response.status).toBe(201);
@@ -157,7 +165,7 @@ describe("treasury routes", () => {
       .set("Authorization", authHeader());
     const transferRows = ledger.body.data.filter(
       (row: { sourceType: string; sourceId: string }) =>
-        row.sourceType === "safe_transfer" && row.sourceId === response.body.id
+        row.sourceType === "safe_transfer" && row.sourceId === response.body.id,
     );
     expect(transferRows).toHaveLength(2);
   });
@@ -173,7 +181,7 @@ describe("treasury routes", () => {
         transferDate: "2026-08-30",
         fromSafeId: sourceSafeId,
         toSafeId: destinationSafeId,
-        amount: 75
+        amount: 75,
       });
 
     expect(response.status).toBe(409);
@@ -189,7 +197,7 @@ describe("treasury routes", () => {
       .send({
         adjustmentDate: "2026-08-30",
         newBalance: 120,
-        reason: ""
+        reason: "",
       });
     expect(invalidResponse.status).toBe(400);
 
@@ -199,7 +207,7 @@ describe("treasury routes", () => {
       .send({
         adjustmentDate: "2026-08-30",
         newBalance: 120,
-        reason: "Physical cash count"
+        reason: "Physical cash count",
       });
 
     expect(response.status).toBe(201);
@@ -208,7 +216,9 @@ describe("treasury routes", () => {
 
     const db = getDatabase();
     const audit = db
-      .prepare("SELECT id FROM audit_logs WHERE action = 'adjust_safe_balance' AND entity_id = ?")
+      .prepare(
+        "SELECT id FROM audit_logs WHERE action = 'adjust_safe_balance' AND entity_id = ?",
+      )
       .get(safeId);
     expect(audit).toBeTruthy();
   });
@@ -226,23 +236,29 @@ describe("treasury routes", () => {
         ownerId,
         safeId,
         amount: 250,
-        notes: "Owner added working capital"
+        notes: "Owner added working capital",
       });
 
     expect(response.status).toBe(201);
     expect(response.body.transactionType).toBe("capital_injection");
 
-    const safe = await request(app).get(`/api/safes/${safeId}`).set("Authorization", authHeader());
+    const safe = await request(app)
+      .get(`/api/safes/${safeId}`)
+      .set("Authorization", authHeader());
     expect(safe.body.data.currentBalanceMinor).toBe(35000);
 
     const ledger = await request(app)
       .get("/api/safe-transactions")
       .set("Authorization", authHeader());
     const row = ledger.body.data.find(
-      (entry: { sourceType: string; sourceId: string; transactionType: string }) =>
+      (entry: {
+        sourceType: string;
+        sourceId: string;
+        transactionType: string;
+      }) =>
         entry.sourceType === "capital_transaction" &&
         entry.sourceId === response.body.id &&
-        entry.transactionType === "capital_injection"
+        entry.transactionType === "capital_injection",
     );
     expect(row).toBeTruthy();
   });
@@ -259,13 +275,15 @@ describe("treasury routes", () => {
         transactionType: "owner_withdrawal",
         ownerId,
         safeId,
-        amount: 75
+        amount: 75,
       });
 
     expect(response.status).toBe(201);
     expect(response.body.transactionType).toBe("owner_withdrawal");
 
-    const safe = await request(app).get(`/api/safes/${safeId}`).set("Authorization", authHeader());
+    const safe = await request(app)
+      .get(`/api/safes/${safeId}`)
+      .set("Authorization", authHeader());
     expect(safe.body.data.currentBalanceMinor).toBe(22500);
   });
 
@@ -281,7 +299,7 @@ describe("treasury routes", () => {
         transactionType: "owner_withdrawal",
         ownerId,
         safeId,
-        amount: 75
+        amount: 75,
       });
 
     expect(response.status).toBe(409);
@@ -291,7 +309,9 @@ describe("treasury routes", () => {
   it("returns treasury report totals across safe movements", async () => {
     const safeId = await createSafe(100);
     const db = getDatabase();
-    db.prepare("UPDATE safe_transactions SET transaction_date = '2026-08-30' WHERE safe_id = ?").run(safeId);
+    db.prepare(
+      "UPDATE safe_transactions SET transaction_date = '2026-08-30' WHERE safe_id = ?",
+    ).run(safeId);
     const ownerId = await createOwner();
 
     await request(app)
@@ -302,7 +322,7 @@ describe("treasury routes", () => {
         transactionType: "capital_injection",
         ownerId,
         safeId,
-        amount: 200
+        amount: 200,
       });
 
     await request(app)
@@ -313,7 +333,7 @@ describe("treasury routes", () => {
         description: "Report expense",
         amount: 50,
         paymentStatus: "paid",
-        safeId
+        safeId,
       });
 
     const report = await request(app)

@@ -79,9 +79,14 @@ const en = {
     title: "Management System",
     eyebrow: "Local System",
     heading: "Daily Factory Operations",
-    description: "Manage customers, suppliers, materials, receivings, payments, production batches, finished stock, treasury, and reference settings for daily factory operations.",
+    description:
+      "Manage customers, suppliers, materials, receivings, payments, production batches, finished stock, treasury, and reference settings for daily factory operations.",
     mainNavigation: "Main navigation",
     currentUser: "Current user",
+  },
+  theme: {
+    switchToLight: "Switch to light mode",
+    switchToDark: "Switch to dark mode",
   },
   dashboard: {
     title: "Dashboard",
@@ -94,7 +99,8 @@ const en = {
     salesRevenue: "Sales revenue",
     productionCompleted: "Production completed",
     businessSnapshot: "Business snapshot",
-    snapshotDesc: "Dashboard totals are calculated from invoices, payments, safe movements, stock, production batches, and expenses.",
+    snapshotDesc:
+      "Dashboard totals are calculated from invoices, payments, safe movements, stock, production batches, and expenses.",
     grossProfit: "Gross profit",
     paidExpenses: "Paid expenses",
     backendHealth: "Backend health",
@@ -245,7 +251,8 @@ const en = {
   },
   safes: {
     title: "Safes",
-    description: "Safes/accounts with independent balance and treasury movements.",
+    description:
+      "Safes/accounts with independent balance and treasury movements.",
     add: "Add safe",
     edit: "Edit safe",
     name: "Name",
@@ -265,7 +272,8 @@ const en = {
   },
   receivings: {
     title: "Receivings",
-    description: "Raw material receipts from suppliers with weighted average and payables.",
+    description:
+      "Raw material receipts from suppliers with weighted average and payables.",
     add: "New receiving",
     number: "Number",
     supplier: "Supplier",
@@ -323,7 +331,8 @@ const en = {
   },
   production: {
     title: "Production batches",
-    description: "Manage production batches, material consumption and finished goods output.",
+    description:
+      "Manage production batches, material consumption and finished goods output.",
     addBatch: "New batch",
     batchNumber: "Batch number",
     model: "Model",
@@ -390,7 +399,8 @@ const en = {
   },
   finished: {
     title: "Finished stock",
-    description: "Finished goods stock by Model + Color + Size with average cost.",
+    description:
+      "Finished goods stock by Model + Color + Size with average cost.",
     variant: "Variant",
     model: "Model",
     size: "Size",
@@ -462,7 +472,8 @@ const en = {
       cancel: "Cancel invoice",
       print: "Print invoice",
       errorConfirm: "Could not confirm. Check finished stock.",
-      errorCancel: "Could not cancel. Paid invoices need payment reversal first.",
+      errorCancel:
+        "Could not cancel. Paid invoices need payment reversal first.",
     },
   },
   customerPayments: {
@@ -657,7 +668,8 @@ const en = {
   },
   settings: {
     title: "Reference settings",
-    description: "Sizes, colors, payment methods, expense categories, and owners.",
+    description:
+      "Sizes, colors, payment methods, expense categories, and owners.",
     sizes: "Sizes",
     colors: "Colors",
     paymentMethods: "Payment methods",
@@ -682,7 +694,8 @@ const en = {
   },
   backup: {
     title: "Database Backups",
-    subtitle: "Manage manual and automatic database backups, retention policies, and database restoration.",
+    subtitle:
+      "Manage manual and automatic database backups, retention policies, and database restoration.",
     autoSettings: "Automatic Backup Settings",
     enabled: "Enable Automatic Backups",
     frequency: "Backup Frequency",
@@ -704,9 +717,11 @@ const en = {
     restore: "Restore",
     delete: "Delete",
     confirmRestoreTitle: "Confirm Database Restore",
-    confirmRestoreMsg: "WARNING: This will overwrite your current database with the selected backup. The application will automatically reload to refresh all data. Are you sure you want to proceed?",
+    confirmRestoreMsg:
+      "WARNING: This will overwrite your current database with the selected backup. The application will automatically reload to refresh all data. Are you sure you want to proceed?",
     confirmDeleteTitle: "Confirm Backup Deletion",
-    confirmDeleteMsg: "Are you sure you want to delete this backup file? This action cannot be undone.",
+    confirmDeleteMsg:
+      "Are you sure you want to delete this backup file? This action cannot be undone.",
     toastRestoreSuccess: "Database restored successfully! Reloading...",
     toastBackupSuccess: "Backup created successfully",
     toastDeleteSuccess: "Backup deleted successfully",

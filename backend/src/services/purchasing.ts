@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
+import { recordAudit } from "../utils/audit.js";
 import { nextDocumentNumber } from "../utils/documentSequence.js";
 import {
   decreaseSafeBalance,
@@ -216,6 +217,20 @@ export function createMaterialReceiving(
         allocations: [{ materialReceivingId: receivingId, allocatedAmountMinor: paidMinor }]
       });
     }
+
+    recordAudit(db, {
+      userId: input.createdBy,
+      action: "create_material_receiving",
+      entityType: "material_receiving",
+      entityId: receivingId,
+      after: {
+        receivingNumber,
+        supplierId: input.supplierId,
+        totalMinor,
+        paidMinor,
+        remainingMinor,
+      },
+    });
   });
 
   runReceiving();
@@ -360,6 +375,19 @@ export function createSupplierPaymentInternal(
     description: `Supplier payment ${paymentNumber}`,
     debitMinor: input.amountMinor,
     createdBy: input.createdBy
+  });
+
+  recordAudit(db, {
+    userId: input.createdBy,
+    action: "create_supplier_payment",
+    entityType: "supplier_payment",
+    entityId: paymentId,
+    after: {
+      paymentNumber,
+      supplierId: input.supplierId,
+      amountMinor: input.amountMinor,
+      safeId: input.safeId,
+    },
   });
 
   return { id: paymentId, paymentNumber };

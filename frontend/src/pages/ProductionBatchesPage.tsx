@@ -20,6 +20,7 @@ import {
   listProductionBatches,
   startProductionBatch,
   updateProductionBatch,
+  updateProductionStage,
   type ConsumptionInput,
   type CostComponentInput,
   type OutputInput
@@ -87,6 +88,7 @@ export function ProductionBatchesPage() {
   const [editConsumptions, setEditConsumptions] = useState<ConsumptionLine[]>([]);
   const [editOutputs, setEditOutputs] = useState<OutputLine[]>([]);
   const [editComponents, setEditComponents] = useState<ComponentLine[]>([]);
+  const [viewMode, setViewMode] = useState<"table" | "kanban">(() => (localStorage.getItem("production.viewMode") as "table" | "kanban") || "table");
 
   const batchesQuery = useQuery({
     queryKey: ["production-batches", page, pageSize, debouncedSearch],
@@ -309,6 +311,23 @@ export function ProductionBatchesPage() {
     setFieldError("");
   }
 
+  const stageOrder: Array<{ id: string; label: string; color: string }> = [
+    { id: "draft", label: "مسودة", color: "#e5e7eb" },
+    { id: "cutting", label: "قص", color: "#fef3c7" },
+    { id: "sewing", label: "خياطة", color: "#dbeafe" },
+    { id: "finishing", label: "تشطيب", color: "#e9d5ff" },
+    { id: "completed", label: "مكتمل", color: "#dcfce7" }
+  ];
+
+  const stageMutation = useMutation({
+    mutationFn: ({ id, stage }: { id: string; stage: string }) => updateProductionStage(id, stage),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["production-batches"] });
+      showToast(t("common.save") + " ✓");
+    },
+    onError: (e: unknown) => setActionError(e instanceof Error ? e.message : t("production.form.error"))
+  });
+
   return (
     <>
       <ListPageShell
@@ -334,7 +353,43 @@ export function ProductionBatchesPage() {
           ) : null
         }
       >
-        <table>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <button className={viewMode === "table" ? "tab-button active" : "tab-button"} onClick={() => { setViewMode("table"); localStorage.setItem("production.viewMode", "table"); }} type="button">جدول</button>
+          <button className={viewMode === "kanban" ? "tab-button active" : "tab-button"} onClick={() => { setViewMode("kanban"); localStorage.setItem("production.viewMode", "kanban"); }} type="button">لوحة المراحل</button>
+        </div>
+
+        {viewMode === "kanban" ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, overflowX: "auto" }}>
+            {stageOrder.map((stage) => {
+              const stageRows = rows.filter((r: any) => (r.stage || (r.status === "draft" ? "draft" : r.status === "completed" ? "completed" : "cutting")) === stage.id);
+              const nextStage = stageOrder[stageOrder.findIndex((s) => s.id === stage.id) + 1];
+              return (
+                <div key={stage.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: 10, minHeight: 300 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <strong style={{ fontSize: 13, padding: "4px 8px", borderRadius: 999, background: stage.color }}>{stage.label}</strong>
+                    <span style={{ fontSize: 11, color: "#6b7280" }}>{stageRows.length}</span>
+                  </div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {stageRows.length === 0 ? <span className="muted" style={{ fontSize: 12, textAlign: "center", padding: 12 }}>لا يوجد</span> : stageRows.map((batch: any) => (
+                      <div key={batch.id} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, boxShadow: "0 1px 2px rgba(0,0,0,0.04)", display: "grid", gap: 6 }}>
+                        <div style={{ fontWeight: 700, fontSize: 12 }} dir="ltr">{batch.batchNumber}</div>
+                        <div style={{ fontSize: 12 }}>{batch.modelCode} - {batch.modelName}</div>
+                        <div style={{ fontSize: 11, color: "#6b7280" }}>{t("production.planned")}: {batch.plannedQuantity} | {t("production.good")}: {batch.goodQuantity || 0}</div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button className="link-button" style={{ fontSize: 11 }} onClick={() => setDetailId(batch.id)} type="button">{t("common.view")}</button>
+                          {nextStage && stage.id !== "completed" ? (
+                            <button className="ghost-button" style={{ fontSize: 11, padding: "4px 8px" }} onClick={() => stageMutation.mutate({ id: batch.id, stage: nextStage.id })} type="button">→ {nextStage.label}</button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <table>
           <thead>
             <tr>
               <th>{t("production.batchNumber")}</th>
@@ -395,6 +450,7 @@ export function ProductionBatchesPage() {
             )}
           </tbody>
         </table>
+        )}
       </ListPageShell>
 
       {createOpen ? (

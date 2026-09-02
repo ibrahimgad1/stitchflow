@@ -87,9 +87,24 @@ customersRouter.get("/customers/:id/ledger", (req, res) => {
     return;
   }
 
+  const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : "";
+  const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo.trim() : "";
+
+  const conditions = ["customer_id = ?"];
+  const values: Array<string | number> = [req.params.id];
+  if (dateFrom) {
+    conditions.push("entry_date >= ?");
+    values.push(dateFrom);
+  }
+  if (dateTo) {
+    conditions.push("entry_date <= ?");
+    values.push(dateTo);
+  }
+  const where = conditions.join(" AND ");
+
   const total = db
-    .prepare("SELECT COUNT(*) AS count FROM customer_ledger_entries WHERE customer_id = ?")
-    .get(req.params.id) as { count: number };
+    .prepare(`SELECT COUNT(*) AS count FROM customer_ledger_entries WHERE ${where}`)
+    .get(...values) as { count: number };
 
   const rows = db
     .prepare(`
@@ -98,15 +113,32 @@ customersRouter.get("/customers/:id/ledger", (req, res) => {
              credit_minor AS creditMinor, balance_after_minor AS balanceAfterMinor,
              created_at AS createdAt
       FROM customer_ledger_entries
-      WHERE customer_id = ?
+      WHERE ${where}
       ORDER BY entry_date DESC, created_at DESC, rowid DESC
       LIMIT ? OFFSET ?
     `)
-    .all(req.params.id, params.pageSize, (params.page - 1) * params.pageSize);
+    .all(...values, params.pageSize, (params.page - 1) * params.pageSize);
+
+  // Opening balance = balance of last entry before dateFrom
+  let openingMinor = 0;
+  if (dateFrom) {
+    const opening = db
+      .prepare(
+        `SELECT balance_after_minor AS balance FROM customer_ledger_entries WHERE customer_id = ? AND entry_date < ? ORDER BY entry_date DESC, created_at DESC, rowid DESC LIMIT 1`
+      )
+      .get(req.params.id, dateFrom) as { balance: number } | undefined;
+    openingMinor = opening?.balance ?? 0;
+  }
+
+  const totals = db
+    .prepare(`SELECT COALESCE(SUM(debit_minor),0) as debit, COALESCE(SUM(credit_minor),0) as credit FROM customer_ledger_entries WHERE ${where}`)
+    .get(...values) as { debit: number; credit: number };
 
   res.json({
     ...paginatedResponse(rows, total.count, params),
-    balanceMinor: getCustomerBalanceMinor(db, req.params.id)
+    balanceMinor: getCustomerBalanceMinor(db, req.params.id),
+    openingMinor,
+    totals
   });
 });
 

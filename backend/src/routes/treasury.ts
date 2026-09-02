@@ -1,37 +1,46 @@
 import { Router } from "express";
 import { z } from "zod";
 import { getDatabase } from "../database/connection.js";
-import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
+import {
+  requireAuth,
+  requireRole,
+  type AuthenticatedRequest,
+} from "../middleware/auth.js";
 import {
   adjustSafeBalance,
   createCapitalTransaction,
-  createSafeTransfer
+  createSafeTransfer,
 } from "../services/treasury.js";
-import { likePattern, paginatedResponse, parsePagination } from "../utils/pagination.js";
+import { isoDateSchema } from "../utils/date.js";
+import {
+  likePattern,
+  paginatedResponse,
+  parsePagination,
+} from "../utils/pagination.js";
 
 export const treasuryRouter = Router();
 
 const transferSchema = z.object({
-  transferDate: z.string().trim().min(1),
+  transferDate: isoDateSchema,
   fromSafeId: z.string().trim().min(1),
   toSafeId: z.string().trim().min(1),
   amount: z.number().positive(),
-  notes: z.string().trim().optional().nullable()
+  notes: z.string().trim().optional().nullable(),
 });
 
 const adjustmentSchema = z.object({
-  adjustmentDate: z.string().trim().min(1),
+  adjustmentDate: isoDateSchema,
   newBalance: z.number().min(0),
-  reason: z.string().trim().min(1)
+  reason: z.string().trim().min(1),
 });
 
 const capitalTransactionSchema = z.object({
-  transactionDate: z.string().trim().min(1),
+  transactionDate: isoDateSchema,
   transactionType: z.enum(["capital_injection", "owner_withdrawal"]),
   ownerId: z.string().trim().min(1).optional().nullable(),
   safeId: z.string().trim().min(1),
   amount: z.number().positive(),
-  notes: z.string().trim().optional().nullable()
+  notes: z.string().trim().optional().nullable(),
 });
 
 treasuryRouter.use(requireAuth);
@@ -41,8 +50,10 @@ treasuryRouter.get("/treasury/report", (req, res) => {
   const conditions = ["1 = 1"];
   const values: Array<string | number> = [];
 
-  const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : "";
-  const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo.trim() : "";
+  const dateFrom =
+    typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : "";
+  const dateTo =
+    typeof req.query.dateTo === "string" ? req.query.dateTo.trim() : "";
 
   if (dateFrom) {
     conditions.push("safe_transactions.transaction_date >= ?");
@@ -56,27 +67,32 @@ treasuryRouter.get("/treasury/report", (req, res) => {
 
   const where = conditions.join(" AND ");
   const movementTotals = db
-    .prepare(`
+    .prepare(
+      `
       SELECT
         COALESCE(SUM(CASE WHEN direction = 'in' THEN amount_minor ELSE 0 END), 0) AS inflowMinor,
         COALESCE(SUM(CASE WHEN direction = 'out' THEN amount_minor ELSE 0 END), 0) AS outflowMinor
       FROM safe_transactions
       WHERE ${where}
-    `)
+    `,
+    )
     .get(...values) as { inflowMinor: number; outflowMinor: number };
 
   const safeTotals = db
-    .prepare(`
+    .prepare(
+      `
       SELECT
         COALESCE(SUM(current_balance_minor), 0) AS totalSafeBalanceMinor,
         COUNT(*) AS safeCount
       FROM safes
       WHERE is_active = 1
-    `)
+    `,
+    )
     .get() as { totalSafeBalanceMinor: number; safeCount: number };
 
   const bySafe = db
-    .prepare(`
+    .prepare(
+      `
       SELECT safes.id AS safeId,
              safes.name AS safeName,
              safes.current_balance_minor AS currentBalanceMinor,
@@ -89,7 +105,8 @@ treasuryRouter.get("/treasury/report", (req, res) => {
       WHERE safes.is_active = 1
       GROUP BY safes.id, safes.name, safes.current_balance_minor
       ORDER BY safes.name ASC
-    `)
+    `,
+    )
     .all(...values) as Array<{
     safeId: string;
     safeName: string;
@@ -106,18 +123,23 @@ treasuryRouter.get("/treasury/report", (req, res) => {
       safeCount: safeTotals.safeCount,
       inflowMinor: movementTotals.inflowMinor,
       outflowMinor: movementTotals.outflowMinor,
-      netMovementMinor: movementTotals.inflowMinor - movementTotals.outflowMinor,
+      netMovementMinor:
+        movementTotals.inflowMinor - movementTotals.outflowMinor,
       bySafe: bySafe.map((row) => ({
         ...row,
-        netMovementMinor: row.inflowMinor - row.outflowMinor
-      }))
-    }
+        netMovementMinor: row.inflowMinor - row.outflowMinor,
+      })),
+    },
   });
 });
 
 treasuryRouter.get("/treasury/reconcile", (_req, res) => {
   const db = getDatabase();
-  const safes = db.prepare("SELECT id, name, opening_balance_minor AS opening, current_balance_minor AS current FROM safes WHERE is_active=1").all() as Array<{
+  const safes = db
+    .prepare(
+      "SELECT id, name, opening_balance_minor AS opening, current_balance_minor AS current FROM safes WHERE is_active=1",
+    )
+    .all() as Array<{
     id: string;
     name: string;
     opening: number;
@@ -126,7 +148,7 @@ treasuryRouter.get("/treasury/reconcile", (_req, res) => {
   const result = safes.map((s) => {
     const agg = db
       .prepare(
-        `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount_minor ELSE -amount_minor END),0) as net FROM safe_transactions WHERE safe_id=?`
+        `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount_minor ELSE -amount_minor END),0) as net FROM safe_transactions WHERE safe_id=?`,
       )
       .get(s.id) as { net: number };
     const expected = s.opening + agg.net;
@@ -137,7 +159,7 @@ treasuryRouter.get("/treasury/reconcile", (_req, res) => {
       currentMinor: s.current,
       expectedMinor: expected,
       diffMinor: s.current - expected,
-      isBalanced: s.current === expected
+      isBalanced: s.current === expected,
     };
   });
   res.json({ data: result });
@@ -151,13 +173,14 @@ treasuryRouter.get("/safe-transactions", (req, res) => {
 
   if (params.search) {
     conditions.push(
-      "(safes.name LIKE ? ESCAPE '\\' OR safe_transactions.description LIKE ? ESCAPE '\\' OR safe_transactions.source_type LIKE ? ESCAPE '\\')"
+      "(safes.name LIKE ? ESCAPE '\\' OR safe_transactions.description LIKE ? ESCAPE '\\' OR safe_transactions.source_type LIKE ? ESCAPE '\\')",
     );
     const pattern = likePattern(params.search);
     values.push(pattern, pattern, pattern);
   }
 
-  const safeId = typeof req.query.safeId === "string" ? req.query.safeId.trim() : "";
+  const safeId =
+    typeof req.query.safeId === "string" ? req.query.safeId.trim() : "";
   if (safeId) {
     conditions.push("safe_transactions.safe_id = ?");
     values.push(safeId);
@@ -165,16 +188,19 @@ treasuryRouter.get("/safe-transactions", (req, res) => {
 
   const where = conditions.join(" AND ");
   const total = db
-    .prepare(`
+    .prepare(
+      `
       SELECT COUNT(*) AS count
       FROM safe_transactions
       JOIN safes ON safes.id = safe_transactions.safe_id
       WHERE ${where}
-    `)
+    `,
+    )
     .get(...values) as { count: number };
 
   const rows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT safe_transactions.id,
              safe_transactions.safe_id AS safeId,
              safes.name AS safeName,
@@ -192,7 +218,8 @@ treasuryRouter.get("/safe-transactions", (req, res) => {
       WHERE ${where}
       ORDER BY safe_transactions.transaction_date DESC, safe_transactions.created_at DESC
       LIMIT ? OFFSET ?
-    `)
+    `,
+    )
     .all(...values, params.pageSize, (params.page - 1) * params.pageSize);
 
   res.json(paginatedResponse(rows, total.count, params));
@@ -206,7 +233,7 @@ treasuryRouter.get("/safe-transfers", (req, res) => {
 
   if (params.search) {
     conditions.push(
-      "(safe_transfers.transfer_number LIKE ? ESCAPE '\\' OR from_safe.name LIKE ? ESCAPE '\\' OR to_safe.name LIKE ? ESCAPE '\\')"
+      "(safe_transfers.transfer_number LIKE ? ESCAPE '\\' OR from_safe.name LIKE ? ESCAPE '\\' OR to_safe.name LIKE ? ESCAPE '\\')",
     );
     const pattern = likePattern(params.search);
     values.push(pattern, pattern, pattern);
@@ -214,17 +241,20 @@ treasuryRouter.get("/safe-transfers", (req, res) => {
 
   const where = conditions.join(" AND ");
   const total = db
-    .prepare(`
+    .prepare(
+      `
       SELECT COUNT(*) AS count
       FROM safe_transfers
       JOIN safes from_safe ON from_safe.id = safe_transfers.from_safe_id
       JOIN safes to_safe ON to_safe.id = safe_transfers.to_safe_id
       WHERE ${where}
-    `)
+    `,
+    )
     .get(...values) as { count: number };
 
   const rows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT safe_transfers.id,
              safe_transfers.transfer_number AS transferNumber,
              safe_transfers.transfer_date AS transferDate,
@@ -241,7 +271,8 @@ treasuryRouter.get("/safe-transfers", (req, res) => {
       WHERE ${where}
       ORDER BY safe_transfers.transfer_date DESC, safe_transfers.created_at DESC
       LIMIT ? OFFSET ?
-    `)
+    `,
+    )
     .all(...values, params.pageSize, (params.page - 1) * params.pageSize);
 
   res.json(paginatedResponse(rows, total.count, params));
@@ -255,14 +286,16 @@ treasuryRouter.get("/capital-transactions", (req, res) => {
 
   if (params.search) {
     conditions.push(
-      "(owners.name LIKE ? ESCAPE '\\' OR safes.name LIKE ? ESCAPE '\\' OR capital_transactions.notes LIKE ? ESCAPE '\\')"
+      "(owners.name LIKE ? ESCAPE '\\' OR safes.name LIKE ? ESCAPE '\\' OR capital_transactions.notes LIKE ? ESCAPE '\\')",
     );
     const pattern = likePattern(params.search);
     values.push(pattern, pattern, pattern);
   }
 
   const transactionType =
-    typeof req.query.transactionType === "string" ? req.query.transactionType.trim() : "";
+    typeof req.query.transactionType === "string"
+      ? req.query.transactionType.trim()
+      : "";
   if (transactionType) {
     conditions.push("capital_transactions.transaction_type = ?");
     values.push(transactionType);
@@ -270,17 +303,20 @@ treasuryRouter.get("/capital-transactions", (req, res) => {
 
   const where = conditions.join(" AND ");
   const total = db
-    .prepare(`
+    .prepare(
+      `
       SELECT COUNT(*) AS count
       FROM capital_transactions
       LEFT JOIN owners ON owners.id = capital_transactions.owner_id
       JOIN safes ON safes.id = capital_transactions.safe_id
       WHERE ${where}
-    `)
+    `,
+    )
     .get(...values) as { count: number };
 
   const rows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT capital_transactions.id,
              capital_transactions.transaction_date AS transactionDate,
              capital_transactions.transaction_type AS transactionType,
@@ -297,75 +333,102 @@ treasuryRouter.get("/capital-transactions", (req, res) => {
       WHERE ${where}
       ORDER BY capital_transactions.transaction_date DESC, capital_transactions.created_at DESC
       LIMIT ? OFFSET ?
-    `)
+    `,
+    )
     .all(...values, params.pageSize, (params.page - 1) * params.pageSize);
 
   res.json(paginatedResponse(rows, total.count, params));
 });
 
-treasuryRouter.post("/safe-transfers", (req: AuthenticatedRequest, res) => {
-  const parsed = transferSchema.safeParse(req.body);
+treasuryRouter.post(
+  "/safe-transfers",
+  requireRole("admin"),
+  (req: AuthenticatedRequest, res) => {
+    const parsed = transferSchema.safeParse(req.body);
 
-  if (!parsed.success) {
-    res.status(400).json({ statusCode: 400, message: "Invalid transfer data" });
-    return;
-  }
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ statusCode: 400, message: "Invalid transfer data" });
+      return;
+    }
 
-  const db = getDatabase();
+    const db = getDatabase();
 
-  try {
-    const result = createSafeTransfer(db, { ...parsed.data, createdBy: req.user?.id });
-    res.status(201).json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create transfer";
-    const statusCode = message.includes("Insufficient") ? 409 : 400;
-    res.status(statusCode).json({ statusCode, message });
-  }
-});
+    try {
+      const result = createSafeTransfer(db, {
+        ...parsed.data,
+        createdBy: req.user?.id,
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not create transfer";
+      const statusCode = message.includes("Insufficient") ? 409 : 400;
+      res.status(statusCode).json({ statusCode, message });
+    }
+  },
+);
 
-treasuryRouter.post("/safes/:id/adjustments", (req: AuthenticatedRequest, res) => {
-  const parsed = adjustmentSchema.safeParse(req.body);
+treasuryRouter.post(
+  "/safes/:id/adjustments",
+  requireRole("admin"),
+  (req: AuthenticatedRequest, res) => {
+    const parsed = adjustmentSchema.safeParse(req.body);
 
-  if (!parsed.success) {
-    res.status(400).json({ statusCode: 400, message: "Invalid adjustment data" });
-    return;
-  }
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ statusCode: 400, message: "Invalid adjustment data" });
+      return;
+    }
 
-  const db = getDatabase();
+    const db = getDatabase();
 
-  try {
-    const result = adjustSafeBalance(db, {
-      safeId: String(req.params.id),
-      ...parsed.data,
-      createdBy: req.user?.id
-    });
-    res.status(201).json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not adjust safe";
-    const statusCode = message.includes("not found") ? 404 : 400;
-    res.status(statusCode).json({ statusCode, message });
-  }
-});
+    try {
+      const result = adjustSafeBalance(db, {
+        safeId: String(req.params.id),
+        ...parsed.data,
+        createdBy: req.user?.id,
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not adjust safe";
+      const statusCode = message.includes("not found") ? 404 : 400;
+      res.status(statusCode).json({ statusCode, message });
+    }
+  },
+);
 
-treasuryRouter.post("/capital-transactions", (req: AuthenticatedRequest, res) => {
-  const parsed = capitalTransactionSchema.safeParse(req.body);
+treasuryRouter.post(
+  "/capital-transactions",
+  requireRole("admin"),
+  (req: AuthenticatedRequest, res) => {
+    const parsed = capitalTransactionSchema.safeParse(req.body);
 
-  if (!parsed.success) {
-    res.status(400).json({ statusCode: 400, message: "Invalid capital transaction data" });
-    return;
-  }
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ statusCode: 400, message: "Invalid capital transaction data" });
+      return;
+    }
 
-  const db = getDatabase();
+    const db = getDatabase();
 
-  try {
-    const result = createCapitalTransaction(db, {
-      ...parsed.data,
-      createdBy: req.user?.id
-    });
-    res.status(201).json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create capital transaction";
-    const statusCode = message.includes("Insufficient") ? 409 : 400;
-    res.status(statusCode).json({ statusCode, message });
-  }
-});
+    try {
+      const result = createCapitalTransaction(db, {
+        ...parsed.data,
+        createdBy: req.user?.id,
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not create capital transaction";
+      const statusCode = message.includes("Insufficient") ? 409 : 400;
+      res.status(statusCode).json({ statusCode, message });
+    }
+  },
+);

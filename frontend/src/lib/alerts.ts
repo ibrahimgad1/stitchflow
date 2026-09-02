@@ -33,12 +33,30 @@ export async function getLowStockAlerts(): Promise<LowStockAlert> {
   return res.data.data as LowStockAlert;
 }
 
-export async function updateMaterialThreshold(id: string, safetyThreshold: number) {
+export async function updateMaterialThreshold(
+  id: string,
+  safetyThreshold: number,
+) {
   const res = await api.put(`/materials/${id}/threshold`, { safetyThreshold });
   return res.data;
 }
 
-export async function updateVariantThreshold(id: string, safetyThreshold: number) {
-  const res = await api.put(`/model-variants/${id}/threshold`, { safetyThreshold });
+export async function updateVariantThreshold(
+  id: string,
+  safetyThreshold: number,
+) {
+  const res = await api.put(`/model-variants/${id}/threshold`, {
+    safetyThreshold,
+  });
   return res.data;
+}
+
+export async function bulkUpdateMaterialThresholds(
+  updates: Array<{ id: string; safetyThreshold: number }>,
+) {
+  const res = await api.post("/materials/bulk-update-thresholds", updates);
+  return res.data as {
+    successful: Array<{ id: string; safetyThreshold: number }>;
+    failed: Array<{ id: string; error: string }>;
+  };
 }

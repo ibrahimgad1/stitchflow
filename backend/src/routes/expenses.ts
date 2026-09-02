@@ -3,12 +3,17 @@ import { z } from "zod";
 import { getDatabase } from "../database/connection.js";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { createExpense } from "../services/treasury.js";
-import { likePattern, paginatedResponse, parsePagination } from "../utils/pagination.js";
+import { isoDateSchema } from "../utils/date.js";
+import {
+  likePattern,
+  paginatedResponse,
+  parsePagination,
+} from "../utils/pagination.js";
 
 export const expensesRouter = Router();
 
 const expenseSchema = z.object({
-  expenseDate: z.string().trim().min(1),
+  expenseDate: isoDateSchema,
   categoryId: z.string().trim().min(1).optional().nullable(),
   description: z.string().trim().min(1),
   amount: z.number().positive(),
@@ -16,7 +21,7 @@ const expenseSchema = z.object({
   paymentMethodId: z.string().trim().min(1).optional().nullable(),
   safeId: z.string().trim().min(1).optional().nullable(),
   overheadPeriodId: z.string().trim().min(1).optional().nullable(),
-  notes: z.string().trim().optional().nullable()
+  notes: z.string().trim().optional().nullable(),
 });
 
 expensesRouter.use(requireAuth);
@@ -29,14 +34,16 @@ expensesRouter.get("/expenses", (req, res) => {
 
   if (params.search) {
     conditions.push(
-      "(expenses.expense_number LIKE ? ESCAPE '\\' OR expenses.description LIKE ? ESCAPE '\\' OR expense_categories.name LIKE ? ESCAPE '\\')"
+      "(expenses.expense_number LIKE ? ESCAPE '\\' OR expenses.description LIKE ? ESCAPE '\\' OR expense_categories.name LIKE ? ESCAPE '\\')",
     );
     const pattern = likePattern(params.search);
     values.push(pattern, pattern, pattern);
   }
 
   const paymentStatus =
-    typeof req.query.paymentStatus === "string" ? req.query.paymentStatus.trim() : "";
+    typeof req.query.paymentStatus === "string"
+      ? req.query.paymentStatus.trim()
+      : "";
   if (paymentStatus) {
     conditions.push("expenses.payment_status = ?");
     values.push(paymentStatus);
@@ -44,16 +51,19 @@ expensesRouter.get("/expenses", (req, res) => {
 
   const where = conditions.join(" AND ");
   const total = db
-    .prepare(`
+    .prepare(
+      `
       SELECT COUNT(*) AS count
       FROM expenses
       LEFT JOIN expense_categories ON expense_categories.id = expenses.category_id
       WHERE ${where}
-    `)
+    `,
+    )
     .get(...values) as { count: number };
 
   const rows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT expenses.id,
              expenses.expense_number AS expenseNumber,
              expenses.expense_date AS expenseDate,
@@ -76,7 +86,8 @@ expensesRouter.get("/expenses", (req, res) => {
       WHERE ${where}
       ORDER BY expenses.expense_date DESC, expenses.created_at DESC
       LIMIT ? OFFSET ?
-    `)
+    `,
+    )
     .all(...values, params.pageSize, (params.page - 1) * params.pageSize);
 
   res.json(paginatedResponse(rows, total.count, params));
@@ -85,7 +96,8 @@ expensesRouter.get("/expenses", (req, res) => {
 expensesRouter.get("/expenses/:id", (req, res) => {
   const db = getDatabase();
   const expense = db
-    .prepare(`
+    .prepare(
+      `
       SELECT expenses.id,
              expenses.expense_number AS expenseNumber,
              expenses.expense_date AS expenseDate,
@@ -106,7 +118,8 @@ expensesRouter.get("/expenses/:id", (req, res) => {
       LEFT JOIN payment_methods ON payment_methods.id = expenses.payment_method_id
       LEFT JOIN safes ON safes.id = expenses.safe_id
       WHERE expenses.id = ?
-    `)
+    `,
+    )
     .get(req.params.id);
 
   if (!expense) {
@@ -130,11 +143,12 @@ expensesRouter.post("/expenses", (req: AuthenticatedRequest, res) => {
   try {
     const result = createExpense(db, {
       ...parsed.data,
-      createdBy: req.user?.id
+      createdBy: req.user?.id,
     });
     res.status(201).json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create expense";
+    const message =
+      error instanceof Error ? error.message : "Could not create expense";
     const statusCode = message.includes("Insufficient") ? 409 : 400;
     res.status(statusCode).json({ statusCode, message });
   }

@@ -69,6 +69,8 @@ export type CustomerLedgerResponse = PaginatedResponse<{
   createdAt?: string;
 }> & {
   balanceMinor: number;
+  openingMinor?: number;
+  totals?: { debit: number; credit: number };
 };
 
 function queryString(params: ListParams & { customerId?: string; status?: string } = {}): string {
@@ -96,10 +98,16 @@ export async function listCustomerSalesInvoices(customerId: string, params?: Lis
   return response.data;
 }
 
-export async function getCustomerLedger(customerId: string, params?: ListParams) {
-  const response = await api.get<CustomerLedgerResponse>(
-    `/customers/${customerId}/ledger${queryString(params)}`
-  );
+export async function getCustomerLedger(
+  customerId: string,
+  params?: ListParams & { dateFrom?: string; dateTo?: string }
+) {
+  const qs = queryString(params as ListParams);
+  const extra = [];
+  if ((params as unknown as { dateFrom?: string })?.dateFrom) extra.push(`dateFrom=${encodeURIComponent((params as unknown as { dateFrom: string }).dateFrom)}`);
+  if ((params as unknown as { dateTo?: string })?.dateTo) extra.push(`dateTo=${encodeURIComponent((params as unknown as { dateTo: string }).dateTo)}`);
+  const url = `/customers/${customerId}/ledger${qs}${extra.length ? (qs ? "&" : "?") + extra.join("&") : ""}`;
+  const response = await api.get<CustomerLedgerResponse>(url);
   return response.data;
 }
 

@@ -2,9 +2,18 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { getDatabase } from "../database/connection.js";
-import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
+import {
+  requireAuth,
+  requireRole,
+  type AuthenticatedRequest,
+} from "../middleware/auth.js";
 import { adjustMaterialStock } from "../services/purchasing.js";
-import { likePattern, paginatedResponse, parsePagination } from "../utils/pagination.js";
+import { isoDateSchema } from "../utils/date.js";
+import {
+  likePattern,
+  paginatedResponse,
+  parsePagination,
+} from "../utils/pagination.js";
 
 export const materialsRouter = Router();
 
@@ -14,7 +23,7 @@ const materialSchema = z.object({
   unit: z.string().trim().min(1).default("meter"),
   supplierId: z.string().trim().min(1).optional().nullable(),
   notes: z.string().trim().optional().nullable(),
-  isActive: z.boolean().optional()
+  isActive: z.boolean().optional(),
 });
 
 materialsRouter.use(requireAuth);
@@ -30,7 +39,9 @@ materialsRouter.get("/materials", (req, res) => {
   }
 
   if (params.search) {
-    conditions.push("(materials.name LIKE ? ESCAPE '\\' OR materials.color_name LIKE ? ESCAPE '\\')");
+    conditions.push(
+      "(materials.name LIKE ? ESCAPE '\\' OR materials.color_name LIKE ? ESCAPE '\\')",
+    );
     const pattern = likePattern(params.search);
     values.push(pattern, pattern);
   }
@@ -41,7 +52,8 @@ materialsRouter.get("/materials", (req, res) => {
     .get(...values) as { count: number };
 
   const rows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT materials.id, materials.name, materials.color_name AS colorName,
              materials.unit, materials.current_quantity AS currentQuantity,
              materials.weighted_average_cost_minor AS weightedAverageCostMinor,
@@ -54,20 +66,27 @@ materialsRouter.get("/materials", (req, res) => {
       WHERE ${where}
       ORDER BY materials.name ASC
       LIMIT ? OFFSET ?
-    `)
+    `,
+    )
     .all(...values, params.pageSize, (params.page - 1) * params.pageSize);
 
   res.json(paginatedResponse(rows, total.count, params));
 });
 
 materialsRouter.put("/materials/:id/threshold", (req, res) => {
-  const parsed = z.object({ safetyThreshold: z.number().min(0) }).safeParse(req.body);
+  const parsed = z
+    .object({ safetyThreshold: z.number().min(0) })
+    .safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ statusCode: 400, message: "Invalid threshold" });
     return;
   }
   const db = getDatabase();
-  const result = db.prepare("UPDATE materials SET safety_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(parsed.data.safetyThreshold, req.params.id);
+  const result = db
+    .prepare(
+      "UPDATE materials SET safety_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    )
+    .run(parsed.data.safetyThreshold, req.params.id);
   if (result.changes === 0) {
     res.status(404).json({ statusCode: 404, message: "Material not found" });
     return;
@@ -75,10 +94,67 @@ materialsRouter.put("/materials/:id/threshold", (req, res) => {
   res.json({ id: req.params.id, safetyThreshold: parsed.data.safetyThreshold });
 });
 
+materialsRouter.post(
+  "/materials/bulk-update-thresholds",
+  requireRole("admin"),
+  (req, res) => {
+    const bulkSchema = z.array(
+      z.object({
+        id: z.string().trim().min(1),
+        safetyThreshold: z.number().min(0),
+      }),
+    );
+
+    const parsed = bulkSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ statusCode: 400, message: "Invalid bulk update data" });
+      return;
+    }
+
+    const db = getDatabase();
+    const results = {
+      successful: [] as Array<{ id: string; safetyThreshold: number }>,
+      failed: [] as Array<{ id: string; error: string }>,
+    };
+
+    try {
+      db.exec("BEGIN TRANSACTION");
+
+      for (const item of parsed.data) {
+        const result = db
+          .prepare(
+            "UPDATE materials SET safety_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          )
+          .run(item.safetyThreshold, item.id);
+
+        if (result.changes === 0) {
+          results.failed.push({ id: item.id, error: "Material not found" });
+        } else {
+          results.successful.push({
+            id: item.id,
+            safetyThreshold: item.safetyThreshold,
+          });
+        }
+      }
+
+      db.exec("COMMIT");
+      res.json(results);
+    } catch (error) {
+      db.exec("ROLLBACK");
+      const message =
+        error instanceof Error ? error.message : "Bulk update failed";
+      res.status(500).json({ statusCode: 500, message });
+    }
+  },
+);
+
 materialsRouter.get("/materials/:id", (req, res) => {
   const db = getDatabase();
   const material = db
-    .prepare(`
+    .prepare(
+      `
       SELECT materials.id, materials.name, materials.color_name AS colorName,
              materials.unit, materials.current_quantity AS currentQuantity,
              materials.weighted_average_cost_minor AS weightedAverageCostMinor,
@@ -89,7 +165,8 @@ materialsRouter.get("/materials/:id", (req, res) => {
       FROM materials
       LEFT JOIN suppliers ON suppliers.id = materials.supplier_id
       WHERE materials.id = ?
-    `)
+    `,
+    )
     .get(req.params.id);
 
   if (!material) {
@@ -111,7 +188,9 @@ materialsRouter.post("/materials", (req, res) => {
   const db = getDatabase();
 
   if (parsed.data.supplierId) {
-    const supplier = db.prepare("SELECT id FROM suppliers WHERE id = ?").get(parsed.data.supplierId);
+    const supplier = db
+      .prepare("SELECT id FROM suppliers WHERE id = ?")
+      .get(parsed.data.supplierId);
     if (!supplier) {
       res.status(400).json({ statusCode: 400, message: "Supplier not found" });
       return;
@@ -119,17 +198,19 @@ materialsRouter.post("/materials", (req, res) => {
   }
 
   const id = randomUUID();
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO materials (id, name, color_name, unit, supplier_id, notes, is_active)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     id,
     parsed.data.name,
     parsed.data.colorName ?? null,
     parsed.data.unit,
     parsed.data.supplierId ?? null,
     parsed.data.notes ?? null,
-    parsed.data.isActive === false ? 0 : 1
+    parsed.data.isActive === false ? 0 : 1,
   );
 
   res.status(201).json({
@@ -137,7 +218,7 @@ materialsRouter.post("/materials", (req, res) => {
     ...parsed.data,
     currentQuantity: 0,
     weightedAverageCostMinor: 0,
-    isActive: parsed.data.isActive !== false
+    isActive: parsed.data.isActive !== false,
   });
 });
 
@@ -152,27 +233,33 @@ materialsRouter.put("/materials/:id", (req, res) => {
   const db = getDatabase();
 
   if (parsed.data.supplierId) {
-    const supplier = db.prepare("SELECT id FROM suppliers WHERE id = ?").get(parsed.data.supplierId);
+    const supplier = db
+      .prepare("SELECT id FROM suppliers WHERE id = ?")
+      .get(parsed.data.supplierId);
     if (!supplier) {
       res.status(400).json({ statusCode: 400, message: "Supplier not found" });
       return;
     }
   }
 
-  const result = db.prepare(`
+  const result = db
+    .prepare(
+      `
     UPDATE materials
     SET name = ?, color_name = ?, unit = ?, supplier_id = ?,
         notes = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).run(
-    parsed.data.name,
-    parsed.data.colorName ?? null,
-    parsed.data.unit,
-    parsed.data.supplierId ?? null,
-    parsed.data.notes ?? null,
-    parsed.data.isActive === false ? 0 : 1,
-    req.params.id
-  );
+  `,
+    )
+    .run(
+      parsed.data.name,
+      parsed.data.colorName ?? null,
+      parsed.data.unit,
+      parsed.data.supplierId ?? null,
+      parsed.data.notes ?? null,
+      parsed.data.isActive === false ? 0 : 1,
+      req.params.id,
+    );
 
   if (result.changes === 0) {
     res.status(404).json({ statusCode: 404, message: "Material not found" });
@@ -185,25 +272,30 @@ materialsRouter.put("/materials/:id", (req, res) => {
 const adjustmentSchema = z.object({
   newQuantity: z.number().min(0),
   reason: z.string().trim().min(1),
-  adjustmentDate: z.string().trim().min(1).optional()
+  adjustmentDate: isoDateSchema.optional(),
 });
 
 materialsRouter.get("/materials/:id/movements", (req, res) => {
   const params = parsePagination(req);
   const db = getDatabase();
 
-  const material = db.prepare("SELECT id FROM materials WHERE id = ?").get(req.params.id);
+  const material = db
+    .prepare("SELECT id FROM materials WHERE id = ?")
+    .get(req.params.id);
   if (!material) {
     res.status(404).json({ statusCode: 404, message: "Material not found" });
     return;
   }
 
   const total = db
-    .prepare("SELECT COUNT(*) AS count FROM material_stock_movements WHERE material_id = ?")
+    .prepare(
+      "SELECT COUNT(*) AS count FROM material_stock_movements WHERE material_id = ?",
+    )
     .get(req.params.id) as { count: number };
 
   const rows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT id, material_id AS materialId, movement_date AS movementDate,
              movement_type AS movementType, source_type AS sourceType, source_id AS sourceId,
              quantity_delta AS quantityDelta, unit_cost_minor AS unitCostMinor,
@@ -213,36 +305,45 @@ materialsRouter.get("/materials/:id/movements", (req, res) => {
       WHERE material_id = ?
       ORDER BY movement_date DESC, created_at DESC
       LIMIT ? OFFSET ?
-    `)
+    `,
+    )
     .all(req.params.id, params.pageSize, (params.page - 1) * params.pageSize);
 
   res.json(paginatedResponse(rows, total.count, params));
 });
 
-materialsRouter.post("/materials/:id/adjustments", (req: AuthenticatedRequest, res) => {
-  const parsed = adjustmentSchema.safeParse(req.body);
+materialsRouter.post(
+  "/materials/:id/adjustments",
+  requireRole("admin"),
+  (req: AuthenticatedRequest, res) => {
+    const parsed = adjustmentSchema.safeParse(req.body);
 
-  if (!parsed.success) {
-    res.status(400).json({ statusCode: 400, message: "Invalid adjustment data" });
-    return;
-  }
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ statusCode: 400, message: "Invalid adjustment data" });
+      return;
+    }
 
-  const db = getDatabase();
-  const materialId = String(req.params.id);
+    const db = getDatabase();
+    const materialId = String(req.params.id);
 
-  try {
-    const result = adjustMaterialStock(db, {
-      materialId,
-      newQuantity: parsed.data.newQuantity,
-      reason: parsed.data.reason,
-      adjustmentDate: parsed.data.adjustmentDate ?? new Date().toISOString().slice(0, 10),
-      createdBy: req.user?.id
-    });
+    try {
+      const result = adjustMaterialStock(db, {
+        materialId,
+        newQuantity: parsed.data.newQuantity,
+        reason: parsed.data.reason,
+        adjustmentDate:
+          parsed.data.adjustmentDate ?? new Date().toISOString().slice(0, 10),
+        createdBy: req.user?.id,
+      });
 
-    res.status(201).json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not adjust stock";
-    const statusCode = message.includes("not found") ? 404 : 400;
-    res.status(statusCode).json({ statusCode, message });
-  }
-});
+      res.status(201).json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not adjust stock";
+      const statusCode = message.includes("not found") ? 404 : 400;
+      res.status(statusCode).json({ statusCode, message });
+    }
+  },
+);

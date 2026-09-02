@@ -1,30 +1,42 @@
 import { Router } from "express";
 import { z } from "zod";
 import { getDatabase } from "../database/connection.js";
-import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
-import { createCustomerPayment, reverseCustomerPayment } from "../services/sales.js";
-import { likePattern, paginatedResponse, parsePagination } from "../utils/pagination.js";
+import {
+  requireAuth,
+  requireRole,
+  type AuthenticatedRequest,
+} from "../middleware/auth.js";
+import {
+  createCustomerPayment,
+  reverseCustomerPayment,
+} from "../services/sales.js";
+import { isoDateSchema } from "../utils/date.js";
+import {
+  likePattern,
+  paginatedResponse,
+  parsePagination,
+} from "../utils/pagination.js";
 
 export const customerPaymentsRouter = Router();
 
 const allocationSchema = z.object({
   salesInvoiceId: z.string().trim().min(1),
-  allocatedAmount: z.number().positive()
+  allocatedAmount: z.number().positive(),
 });
 
 const paymentSchema = z.object({
   customerId: z.string().trim().min(1),
-  paymentDate: z.string().trim().min(1),
+  paymentDate: isoDateSchema,
   amount: z.number().positive(),
   paymentMethodId: z.string().trim().min(1).optional().nullable(),
   safeId: z.string().trim().min(1),
   notes: z.string().trim().optional().nullable(),
-  allocations: z.array(allocationSchema).optional()
+  allocations: z.array(allocationSchema).optional(),
 });
 
 const reversalSchema = z.object({
-  reversalDate: z.string().trim().min(1).optional(),
-  notes: z.string().trim().optional().nullable()
+  reversalDate: isoDateSchema.optional(),
+  notes: z.string().trim().optional().nullable(),
 });
 
 customerPaymentsRouter.use(requireAuth);
@@ -37,13 +49,14 @@ customerPaymentsRouter.get("/customer-payments", (req, res) => {
 
   if (params.search) {
     conditions.push(
-      "(customer_payments.payment_number LIKE ? ESCAPE '\\' OR customers.company_name LIKE ? ESCAPE '\\')"
+      "(customer_payments.payment_number LIKE ? ESCAPE '\\' OR customers.company_name LIKE ? ESCAPE '\\')",
     );
     const pattern = likePattern(params.search);
     values.push(pattern, pattern);
   }
 
-  const customerId = typeof req.query.customerId === "string" ? req.query.customerId.trim() : "";
+  const customerId =
+    typeof req.query.customerId === "string" ? req.query.customerId.trim() : "";
   if (customerId) {
     conditions.push("customer_payments.customer_id = ?");
     values.push(customerId);
@@ -51,16 +64,19 @@ customerPaymentsRouter.get("/customer-payments", (req, res) => {
 
   const where = conditions.join(" AND ");
   const total = db
-    .prepare(`
+    .prepare(
+      `
       SELECT COUNT(*) AS count
       FROM customer_payments
       JOIN customers ON customers.id = customer_payments.customer_id
       WHERE ${where}
-    `)
+    `,
+    )
     .get(...values) as { count: number };
 
   const rows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT customer_payments.id,
              customer_payments.payment_number AS paymentNumber,
              customer_payments.customer_id AS customerId,
@@ -83,7 +99,8 @@ customerPaymentsRouter.get("/customer-payments", (req, res) => {
       WHERE ${where}
       ORDER BY customer_payments.payment_date DESC, customer_payments.created_at DESC
       LIMIT ? OFFSET ?
-    `)
+    `,
+    )
     .all(...values, params.pageSize, (params.page - 1) * params.pageSize);
 
   res.json(paginatedResponse(rows, total.count, params));
@@ -92,7 +109,8 @@ customerPaymentsRouter.get("/customer-payments", (req, res) => {
 customerPaymentsRouter.get("/customer-payments/:id", (req, res) => {
   const db = getDatabase();
   const payment = db
-    .prepare(`
+    .prepare(
+      `
       SELECT customer_payments.id,
              customer_payments.payment_number AS paymentNumber,
              customer_payments.customer_id AS customerId,
@@ -114,7 +132,8 @@ customerPaymentsRouter.get("/customer-payments/:id", (req, res) => {
       JOIN safes ON safes.id = customer_payments.safe_id
       LEFT JOIN payment_methods ON payment_methods.id = customer_payments.payment_method_id
       WHERE customer_payments.id = ?
-    `)
+    `,
+    )
     .get(req.params.id);
 
   if (!payment) {
@@ -123,7 +142,8 @@ customerPaymentsRouter.get("/customer-payments/:id", (req, res) => {
   }
 
   const allocations = db
-    .prepare(`
+    .prepare(
+      `
       SELECT customer_payment_allocations.id,
              customer_payment_allocations.sales_invoice_id AS salesInvoiceId,
              sales_invoices.invoice_number AS invoiceNumber,
@@ -131,61 +151,78 @@ customerPaymentsRouter.get("/customer-payments/:id", (req, res) => {
       FROM customer_payment_allocations
       JOIN sales_invoices ON sales_invoices.id = customer_payment_allocations.sales_invoice_id
       WHERE customer_payment_allocations.payment_id = ?
-    `)
+    `,
+    )
     .all(req.params.id);
 
   res.json({ data: { ...payment, allocations } });
 });
 
-customerPaymentsRouter.post("/customer-payments", (req: AuthenticatedRequest, res) => {
-  const parsed = paymentSchema.safeParse(req.body);
+customerPaymentsRouter.post(
+  "/customer-payments",
+  (req: AuthenticatedRequest, res) => {
+    const parsed = paymentSchema.safeParse(req.body);
 
-  if (!parsed.success) {
-    res.status(400).json({ statusCode: 400, message: "Invalid payment data" });
-    return;
-  }
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ statusCode: 400, message: "Invalid payment data" });
+      return;
+    }
 
-  const db = getDatabase();
+    const db = getDatabase();
 
-  try {
-    const result = createCustomerPayment(db, {
-      ...parsed.data,
-      createdBy: req.user?.id
-    });
-    res.status(201).json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create payment";
-    const statusCode =
-      message.includes("Insufficient") || message.includes("exceeds") ? 409 : 400;
-    res.status(statusCode).json({ statusCode, message });
-  }
-});
+    try {
+      const result = createCustomerPayment(db, {
+        ...parsed.data,
+        createdBy: req.user?.id,
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not create payment";
+      const statusCode =
+        message.includes("Insufficient") || message.includes("exceeds")
+          ? 409
+          : 400;
+      res.status(statusCode).json({ statusCode, message });
+    }
+  },
+);
 
-customerPaymentsRouter.post("/customer-payments/:id/reverse", (req: AuthenticatedRequest, res) => {
-  const parsed = reversalSchema.safeParse(req.body ?? {});
+customerPaymentsRouter.post(
+  "/customer-payments/:id/reverse",
+  requireRole("admin"),
+  (req: AuthenticatedRequest, res) => {
+    const parsed = reversalSchema.safeParse(req.body ?? {});
 
-  if (!parsed.success) {
-    res.status(400).json({ statusCode: 400, message: "Invalid reversal data" });
-    return;
-  }
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ statusCode: 400, message: "Invalid reversal data" });
+      return;
+    }
 
-  const db = getDatabase();
+    const db = getDatabase();
 
-  try {
-    const result = reverseCustomerPayment(db, {
-      customerPaymentId: String(req.params.id),
-      reversalDate: parsed.data.reversalDate ?? new Date().toISOString().slice(0, 10),
-      notes: parsed.data.notes ?? null,
-      createdBy: req.user?.id
-    });
-    res.json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not reverse payment";
-    const statusCode = message.includes("not found")
-      ? 404
-      : message.includes("Insufficient")
-        ? 409
-        : 400;
-    res.status(statusCode).json({ statusCode, message });
-  }
-});
+    try {
+      const result = reverseCustomerPayment(db, {
+        customerPaymentId: String(req.params.id),
+        reversalDate:
+          parsed.data.reversalDate ?? new Date().toISOString().slice(0, 10),
+        notes: parsed.data.notes ?? null,
+        createdBy: req.user?.id,
+      });
+      res.json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not reverse payment";
+      const statusCode = message.includes("not found")
+        ? 404
+        : message.includes("Insufficient")
+          ? 409
+          : 400;
+      res.status(statusCode).json({ statusCode, message });
+    }
+  },
+);

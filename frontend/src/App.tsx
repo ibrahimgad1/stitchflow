@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { useI18n } from "./i18n";
 import { getMe, login, logout, type AuthUser } from "./lib/api";
+import { initTheme } from "./lib/theme";
 import { CustomerPaymentsPage } from "./pages/CustomerPaymentsPage";
 import { CustomerStatementPrintPage } from "./pages/CustomerStatementPrintPage";
 import { CustomerStatementsPage } from "./pages/CustomerStatementsPage";
@@ -33,11 +34,16 @@ export function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loginError, setLoginError] = useState("");
 
+  // Initialize theme on app start
+  useEffect(() => {
+    initTheme();
+  }, []);
+
   const meQuery = useQuery({
     queryKey: ["auth", "me"],
     queryFn: getMe,
     retry: false,
-    enabled: Boolean(localStorage.getItem("auth.token"))
+    enabled: Boolean(localStorage.getItem("auth.token")),
   });
 
   const activeUser = user ?? meQuery.data ?? null;
@@ -49,7 +55,13 @@ export function App() {
   }
 
   if (!activeUser) {
-    return <LoginPage onLogin={setUser} error={loginError} setError={setLoginError} />;
+    return (
+      <LoginPage
+        onLogin={setUser}
+        error={loginError}
+        setError={setLoginError}
+      />
+    );
   }
 
   return (
@@ -58,18 +70,39 @@ export function App() {
         <Route index element={<DashboardPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="sales-invoices" element={<SalesInvoicesPage />} />
-        <Route path="sales-invoices/:id/print" element={<SalesInvoicePrintPage />} />
+        <Route
+          path="sales-invoices/:id/print"
+          element={<SalesInvoicePrintPage />}
+        />
         <Route path="customer-payments" element={<CustomerPaymentsPage />} />
-        <Route path="customer-statements" element={<CustomerStatementsPage />} />
-        <Route path="customer-statements/:id/print" element={<CustomerStatementPrintPage />} />
+        <Route
+          path="customer-statements"
+          element={<CustomerStatementsPage />}
+        />
+        <Route
+          path="customer-statements/:id/print"
+          element={<CustomerStatementPrintPage />}
+        />
         <Route path="suppliers" element={<SuppliersPage />} />
-        <Route path="supplier-statements" element={<SupplierStatementsPage />} />
-        <Route path="supplier-statements/:id/print" element={<SupplierStatementPrintPage />} />
+        <Route
+          path="supplier-statements"
+          element={<SupplierStatementsPage />}
+        />
+        <Route
+          path="supplier-statements/:id/print"
+          element={<SupplierStatementPrintPage />}
+        />
         <Route path="materials" element={<MaterialsPage />} />
-        <Route path="material-receivings" element={<MaterialReceivingsPage />} />
+        <Route
+          path="material-receivings"
+          element={<MaterialReceivingsPage />}
+        />
         <Route path="supplier-payments" element={<SupplierPaymentsPage />} />
         <Route path="production-batches" element={<ProductionBatchesPage />} />
-        <Route path="production-costs" element={<ProductionCostReportsPage />} />
+        <Route
+          path="production-costs"
+          element={<ProductionCostReportsPage />}
+        />
         <Route path="finished-inventory" element={<FinishedInventoryPage />} />
         <Route path="expenses" element={<ExpensesPage />} />
         <Route path="treasury" element={<TreasuryPage />} />
@@ -87,7 +120,7 @@ export function App() {
 function LoginPage({
   onLogin,
   error,
-  setError
+  setError,
 }: {
   onLogin: (user: AuthUser) => void;
   error: string;
@@ -129,7 +162,9 @@ function LoginPage({
           style={{ alignSelf: "flex-start" }}
           onClick={() => setLanguage(lang === "ar" ? "en" : "ar")}
         >
-          {lang === "ar" ? t("language.switchToEnglish") : t("language.switchToArabic")}
+          {lang === "ar"
+            ? t("language.switchToEnglish")
+            : t("language.switchToArabic")}
         </button>
 
         {error ? (

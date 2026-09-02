@@ -3,23 +3,28 @@ import { z } from "zod";
 import { getDatabase } from "../database/connection.js";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { createSupplierPayment } from "../services/purchasing.js";
-import { likePattern, paginatedResponse, parsePagination } from "../utils/pagination.js";
+import { isoDateSchema } from "../utils/date.js";
+import {
+  likePattern,
+  paginatedResponse,
+  parsePagination,
+} from "../utils/pagination.js";
 
 export const supplierPaymentsRouter = Router();
 
 const allocationSchema = z.object({
   materialReceivingId: z.string().trim().min(1),
-  allocatedAmount: z.number().positive()
+  allocatedAmount: z.number().positive(),
 });
 
 const paymentSchema = z.object({
   supplierId: z.string().trim().min(1),
-  paymentDate: z.string().trim().min(1),
+  paymentDate: isoDateSchema,
   amount: z.number().positive(),
   paymentMethodId: z.string().trim().min(1).optional().nullable(),
   safeId: z.string().trim().min(1),
   notes: z.string().trim().optional().nullable(),
-  allocations: z.array(allocationSchema).optional()
+  allocations: z.array(allocationSchema).optional(),
 });
 
 supplierPaymentsRouter.use(requireAuth);
@@ -32,7 +37,7 @@ supplierPaymentsRouter.get("/supplier-payments", (req, res) => {
 
   if (params.search) {
     conditions.push(
-      "(supplier_payments.payment_number LIKE ? ESCAPE '\\' OR suppliers.name LIKE ? ESCAPE '\\')"
+      "(supplier_payments.payment_number LIKE ? ESCAPE '\\' OR suppliers.name LIKE ? ESCAPE '\\')",
     );
     const pattern = likePattern(params.search);
     values.push(pattern, pattern);
@@ -47,16 +52,19 @@ supplierPaymentsRouter.get("/supplier-payments", (req, res) => {
 
   const where = conditions.join(" AND ");
   const total = db
-    .prepare(`
+    .prepare(
+      `
       SELECT COUNT(*) AS count
       FROM supplier_payments
       JOIN suppliers ON suppliers.id = supplier_payments.supplier_id
       WHERE ${where}
-    `)
+    `,
+    )
     .get(...values) as { count: number };
 
   const rows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT supplier_payments.id,
              supplier_payments.payment_number AS paymentNumber,
              supplier_payments.supplier_id AS supplierId,
@@ -77,7 +85,8 @@ supplierPaymentsRouter.get("/supplier-payments", (req, res) => {
       WHERE ${where}
       ORDER BY supplier_payments.payment_date DESC, supplier_payments.created_at DESC
       LIMIT ? OFFSET ?
-    `)
+    `,
+    )
     .all(...values, params.pageSize, (params.page - 1) * params.pageSize);
 
   res.json(paginatedResponse(rows, total.count, params));
@@ -86,7 +95,8 @@ supplierPaymentsRouter.get("/supplier-payments", (req, res) => {
 supplierPaymentsRouter.get("/supplier-payments/:id", (req, res) => {
   const db = getDatabase();
   const payment = db
-    .prepare(`
+    .prepare(
+      `
       SELECT supplier_payments.id,
              supplier_payments.payment_number AS paymentNumber,
              supplier_payments.supplier_id AS supplierId,
@@ -105,7 +115,8 @@ supplierPaymentsRouter.get("/supplier-payments/:id", (req, res) => {
       JOIN safes ON safes.id = supplier_payments.safe_id
       LEFT JOIN payment_methods ON payment_methods.id = supplier_payments.payment_method_id
       WHERE supplier_payments.id = ?
-    `)
+    `,
+    )
     .get(req.params.id);
 
   if (!payment) {
@@ -114,7 +125,8 @@ supplierPaymentsRouter.get("/supplier-payments/:id", (req, res) => {
   }
 
   const allocations = db
-    .prepare(`
+    .prepare(
+      `
       SELECT supplier_payment_allocations.id,
              supplier_payment_allocations.material_receiving_id AS materialReceivingId,
              material_receivings.receiving_number AS receivingNumber,
@@ -123,34 +135,43 @@ supplierPaymentsRouter.get("/supplier-payments/:id", (req, res) => {
       JOIN material_receivings
         ON material_receivings.id = supplier_payment_allocations.material_receiving_id
       WHERE supplier_payment_allocations.payment_id = ?
-    `)
+    `,
+    )
     .all(req.params.id);
 
   res.json({ data: { ...payment, allocations } });
 });
 
-supplierPaymentsRouter.post("/supplier-payments", (req: AuthenticatedRequest, res) => {
-  const parsed = paymentSchema.safeParse(req.body);
+supplierPaymentsRouter.post(
+  "/supplier-payments",
+  (req: AuthenticatedRequest, res) => {
+    const parsed = paymentSchema.safeParse(req.body);
 
-  if (!parsed.success) {
-    res.status(400).json({ statusCode: 400, message: "Invalid payment data" });
-    return;
-  }
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ statusCode: 400, message: "Invalid payment data" });
+      return;
+    }
 
-  const db = getDatabase();
+    const db = getDatabase();
 
-  try {
-    const result = createSupplierPayment(db, {
-      ...parsed.data,
-      createdBy: req.user?.id
-    });
+    try {
+      const result = createSupplierPayment(db, {
+        ...parsed.data,
+        createdBy: req.user?.id,
+      });
 
-    res.status(201).json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create payment";
-    const statusCode =
-      message.includes("Insufficient") || message.includes("exceeds") ? 409 : 400;
+      res.status(201).json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not create payment";
+      const statusCode =
+        message.includes("Insufficient") || message.includes("exceeds")
+          ? 409
+          : 400;
 
-    res.status(statusCode).json({ statusCode, message });
-  }
-});
+      res.status(statusCode).json({ statusCode, message });
+    }
+  },
+);

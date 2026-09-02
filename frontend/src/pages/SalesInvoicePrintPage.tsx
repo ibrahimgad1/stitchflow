@@ -6,6 +6,7 @@ import { useI18n } from "../i18n";
 import { formatMoney } from "../lib/master-data";
 import { saveCurrentPageAsPdf } from "../lib/pdf";
 import { getSalesInvoice } from "../lib/sales";
+import { BarcodeDisplay } from "../components/BarcodeDisplay";
 
 export function SalesInvoicePrintPage() {
   const { t, statusLabel } = useI18n();
@@ -16,7 +17,7 @@ export function SalesInvoicePrintPage() {
   const invoiceQuery = useQuery({
     queryKey: ["sales-invoice-print", id],
     queryFn: () => getSalesInvoice(id!),
-    enabled: Boolean(id)
+    enabled: Boolean(id),
   });
 
   const invoice = invoiceQuery.data;
@@ -24,7 +25,9 @@ export function SalesInvoicePrintPage() {
   async function handleSavePdf() {
     setIsSavingPdf(true);
     try {
-      await saveCurrentPageAsPdf(`sales-invoice-${invoice?.invoiceNumber ?? id ?? "document"}.pdf`);
+      await saveCurrentPageAsPdf(
+        `sales-invoice-${invoice?.invoiceNumber ?? id ?? "document"}.pdf`,
+      );
     } finally {
       setIsSavingPdf(false);
     }
@@ -33,16 +36,37 @@ export function SalesInvoicePrintPage() {
   return (
     <main className="print-page" dir="rtl">
       {/* Top Action & Mode Selector Bar */}
-      <div className="print-actions" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+      <div
+        className="print-actions"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px",
+        }}
+      >
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <Link className="ghost-button" to="/sales-invoices">
             <ArrowLeft size={16} aria-hidden="true" />
             <span>{t("print.back") || "العودة للفواتير"}</span>
           </Link>
-          <div style={{ display: "flex", background: "#ffffff", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "2px" }}>
+          <div
+            style={{
+              display: "flex",
+              background: "#ffffff",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              padding: "2px",
+            }}
+          >
             <button
               className={`tab-button ${printFormat === "a4" ? "active" : ""}`}
-              style={{ minHeight: "32px", padding: "0 12px", border: 0, borderRadius: "var(--radius-sm)" }}
+              style={{
+                minHeight: "32px",
+                padding: "0 12px",
+                border: 0,
+                borderRadius: "var(--radius-sm)",
+              }}
               onClick={() => setPrintFormat("a4")}
               type="button"
             >
@@ -50,7 +74,12 @@ export function SalesInvoicePrintPage() {
             </button>
             <button
               className={`tab-button ${printFormat === "thermal" ? "active" : ""}`}
-              style={{ minHeight: "32px", padding: "0 12px", border: 0, borderRadius: "var(--radius-sm)" }}
+              style={{
+                minHeight: "32px",
+                padding: "0 12px",
+                border: 0,
+                borderRadius: "var(--radius-sm)",
+              }}
               onClick={() => setPrintFormat("thermal")}
               type="button"
             >
@@ -60,14 +89,25 @@ export function SalesInvoicePrintPage() {
         </div>
 
         <div style={{ display: "flex", gap: "8px" }}>
-          <button className="primary-button" type="button" onClick={() => window.print()}>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => window.print()}
+          >
             <Printer size={16} aria-hidden="true" />
             <span>{t("print.print") || "طباعة"}</span>
           </button>
           {printFormat === "a4" ? (
-            <button className="ghost-button" type="button" disabled={isSavingPdf} onClick={handleSavePdf}>
+            <button
+              className="ghost-button"
+              type="button"
+              disabled={isSavingPdf}
+              onClick={handleSavePdf}
+            >
               <FileDown size={16} aria-hidden="true" />
-              <span>{isSavingPdf ? t("print.saving") : t("print.savePdf")}</span>
+              <span>
+                {isSavingPdf ? t("print.saving") : t("print.savePdf")}
+              </span>
             </button>
           ) : null}
         </div>
@@ -86,14 +126,49 @@ export function SalesInvoicePrintPage() {
         <section className="invoice-sheet" aria-label={t("print.salesTitle")}>
           <header className="invoice-print-header">
             <div>
-              <p className="eyebrow">{t("print.salesTitle") || "فاتورة مبيعات معتمدة"}</p>
-              <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>{t("print.factoryName") || "مصنع الملابس الجاهزة"}</h1>
-              <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: "14px" }}>{t("print.subtitle") || "نظام إدارة التصنيع والإنتاج المتكامل"}</p>
+              <p className="eyebrow">
+                {t("print.salesTitle") || "فاتورة مبيعات معتمدة"}
+              </p>
+              <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>
+                {t("print.factoryName") || "مصنع الملابس الجاهزة"}
+              </h1>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  color: "var(--text-muted)",
+                  fontSize: "14px",
+                }}
+              >
+                {t("print.subtitle") || "نظام إدارة التصنيع والإنتاج المتكامل"}
+              </p>
             </div>
-            <div className="invoice-number-block">
-              <span>{t("print.invoice") || "رقم الفاتورة"}</span>
-              <strong dir="ltr">{invoice.invoiceNumber}</strong>
-              <small>{statusLabel(invoice.status)}</small>
+            <div
+              className="invoice-number-block"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                alignItems: "center",
+              }}
+            >
+              <div style={{ textAlign: "center" }}>
+                <span>{t("print.invoice") || "رقم الفاتورة"}</span>
+                <strong
+                  dir="ltr"
+                  style={{ display: "block", fontSize: "18px" }}
+                >
+                  {invoice.invoiceNumber}
+                </strong>
+                <small>{statusLabel(invoice.status)}</small>
+              </div>
+              {/* QR Code for Invoice Verification */}
+              <BarcodeDisplay
+                barcode={`INV-${invoice.invoiceNumber}-${invoice.id}`}
+                format="qr"
+                variant="print"
+                width={80}
+                includeText={false}
+              />
             </div>
           </header>
 
@@ -112,7 +187,15 @@ export function SalesInvoicePrintPage() {
             </div>
             <div>
               <span>{t("print.remaining") || "المتبقي على الفاتورة"}</span>
-              <strong dir="ltr" style={{ color: invoice.remainingMinor > 0 ? "var(--danger)" : "var(--success)" }}>
+              <strong
+                dir="ltr"
+                style={{
+                  color:
+                    invoice.remainingMinor > 0
+                      ? "var(--danger)"
+                      : "var(--success)",
+                }}
+              >
                 {formatMoney(invoice.remainingMinor)}
               </strong>
             </div>
@@ -124,9 +207,15 @@ export function SalesInvoicePrintPage() {
                 <th>{t("print.item") || "البند / الموديل"}</th>
                 <th>{t("print.size") || "المقاس"}</th>
                 <th>{t("print.color") || "اللون"}</th>
-                <th style={{ textAlign: "center" }}>{t("print.qty") || "الكمية"}</th>
-                <th style={{ textAlign: "end" }}>{t("print.unitPrice") || "سعر الوحدة"}</th>
-                <th style={{ textAlign: "end" }}>{t("print.total") || "الإجمالي"}</th>
+                <th style={{ textAlign: "center" }}>
+                  {t("print.qty") || "الكمية"}
+                </th>
+                <th style={{ textAlign: "end" }}>
+                  {t("print.unitPrice") || "سعر الوحدة"}
+                </th>
+                <th style={{ textAlign: "end" }}>
+                  {t("print.total") || "الإجمالي"}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -138,9 +227,18 @@ export function SalesInvoicePrintPage() {
                   </td>
                   <td>{item.sizeName}</td>
                   <td>{item.colorName}</td>
-                  <td dir="ltr" style={{ textAlign: "center", fontWeight: 700 }}>{item.quantity}</td>
-                  <td dir="ltr" style={{ textAlign: "end" }}>{formatMoney(item.unitPriceMinor)}</td>
-                  <td dir="ltr" style={{ textAlign: "end", fontWeight: 700 }}>{formatMoney(item.totalMinor)}</td>
+                  <td
+                    dir="ltr"
+                    style={{ textAlign: "center", fontWeight: 700 }}
+                  >
+                    {item.quantity}
+                  </td>
+                  <td dir="ltr" style={{ textAlign: "end" }}>
+                    {formatMoney(item.unitPriceMinor)}
+                  </td>
+                  <td dir="ltr" style={{ textAlign: "end", fontWeight: 700 }}>
+                    {formatMoney(item.totalMinor)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -153,7 +251,9 @@ export function SalesInvoicePrintPage() {
             </div>
             <div>
               <span>{t("print.discount") || "الخصم"}</span>
-              <strong dir="ltr" style={{ color: "var(--danger)" }}>{formatMoney(invoice.discountMinor)}</strong>
+              <strong dir="ltr" style={{ color: "var(--danger)" }}>
+                {formatMoney(invoice.discountMinor)}
+              </strong>
             </div>
             <div>
               <span>{t("print.total") || "الصافي المستحق"}</span>
@@ -161,7 +261,9 @@ export function SalesInvoicePrintPage() {
             </div>
             <div>
               <span>{t("print.paid") || "المسدد"}</span>
-              <strong dir="ltr" style={{ color: "var(--success)" }}>{formatMoney(invoice.paidMinor)}</strong>
+              <strong dir="ltr" style={{ color: "var(--success)" }}>
+                {formatMoney(invoice.paidMinor)}
+              </strong>
             </div>
             <div>
               <span>{t("print.remaining") || "المتبقي"}</span>
@@ -193,33 +295,78 @@ export function SalesInvoicePrintPage() {
             border: "1px solid var(--border)",
             borderRadius: "var(--radius)",
             boxShadow: "var(--shadow-md)",
-            fontFamily: "'Courier New', Courier, monospace, 'Cairo', sans-serif"
+            fontFamily:
+              "'Courier New', Courier, monospace, 'Cairo', sans-serif",
           }}
         >
-          <div style={{ textAlign: "center", borderBottom: "1px dashed #000000", paddingBottom: "12px", marginBottom: "12px" }}>
-            <h2 style={{ margin: "0 0 4px", fontSize: "18px", fontWeight: 800 }}>{t("print.factoryName") || "مصنع الملابس"}</h2>
+          <div
+            style={{
+              textAlign: "center",
+              borderBottom: "1px dashed #000000",
+              paddingBottom: "12px",
+              marginBottom: "12px",
+            }}
+          >
+            <h2
+              style={{ margin: "0 0 4px", fontSize: "18px", fontWeight: 800 }}
+            >
+              {t("print.factoryName") || "مصنع الملابس"}
+            </h2>
             <p style={{ margin: 0, fontSize: "12px" }}>إيصال مبيعات كاشير</p>
-            <p style={{ margin: "4px 0 0", fontSize: "13px", fontWeight: 700 }}>#{invoice.invoiceNumber}</p>
-            <p style={{ margin: "2px 0 0", fontSize: "11px" }}>التاريخ: {invoice.invoiceDate}</p>
+            <p style={{ margin: "4px 0 0", fontSize: "13px", fontWeight: 700 }}>
+              #{invoice.invoiceNumber}
+            </p>
+            <p style={{ margin: "2px 0 0", fontSize: "11px" }}>
+              التاريخ: {invoice.invoiceDate}
+            </p>
           </div>
 
           <div style={{ fontSize: "12px", marginBottom: "10px" }}>
-            <div><strong>العميل:</strong> {invoice.customerName}</div>
+            <div>
+              <strong>العميل:</strong> {invoice.customerName}
+            </div>
           </div>
 
-          <div style={{ borderBottom: "1px dashed #000000", paddingBottom: "10px", marginBottom: "10px" }}>
+          <div
+            style={{
+              borderBottom: "1px dashed #000000",
+              paddingBottom: "10px",
+              marginBottom: "10px",
+            }}
+          >
             {(invoice.items ?? []).map((item) => (
-              <div key={item.id} style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", marginBottom: "6px" }}>
+              <div
+                key={item.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "12px",
+                  marginBottom: "6px",
+                }}
+              >
                 <div>
-                  <div>{item.modelCode} ({item.sizeName}/{item.colorName})</div>
-                  <small style={{ color: "#666" }}>{item.quantity} × {formatMoney(item.unitPriceMinor)}</small>
+                  <div>
+                    {item.modelCode} ({item.sizeName}/{item.colorName})
+                  </div>
+                  <small style={{ color: "#666" }}>
+                    {item.quantity} × {formatMoney(item.unitPriceMinor)}
+                  </small>
                 </div>
                 <strong>{formatMoney(item.totalMinor)}</strong>
               </div>
             ))}
           </div>
 
-          <div style={{ display: "grid", gap: "4px", fontSize: "12px", borderBottom: "1px dashed #000000", paddingBottom: "10px", marginBottom: "12px" }}>
+          <div
+            style={{
+              display: "grid",
+              gap: "4px",
+              fontSize: "12px",
+              borderBottom: "1px dashed #000000",
+              paddingBottom: "10px",
+              marginBottom: "12px",
+            }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>إجمالي البنود:</span>
               <span>{formatMoney(invoice.subtotalMinor)}</span>
@@ -230,7 +377,14 @@ export function SalesInvoicePrintPage() {
                 <span>-{formatMoney(invoice.discountMinor)}</span>
               </div>
             ) : null}
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "14px", fontWeight: 800 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: "14px",
+                fontWeight: 800,
+              }}
+            >
               <span>الصافي:</span>
               <span>{formatMoney(invoice.totalMinor)}</span>
             </div>
@@ -238,7 +392,13 @@ export function SalesInvoicePrintPage() {
               <span>المدفوع:</span>
               <span>{formatMoney(invoice.paidMinor)}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontWeight: 700,
+              }}
+            >
               <span>المتبقي:</span>
               <span>{formatMoney(invoice.remainingMinor)}</span>
             </div>
@@ -246,7 +406,9 @@ export function SalesInvoicePrintPage() {
 
           <div style={{ textAlign: "center", fontSize: "11px", color: "#666" }}>
             <p style={{ margin: 0 }}>شكراً لتعاملكم معنا</p>
-            <p style={{ margin: "2px 0 0" }}>البضاعة المباعة ترد وتستبدل خلال 14 يوم</p>
+            <p style={{ margin: "2px 0 0" }}>
+              البضاعة المباعة ترد وتستبدل خلال 14 يوم
+            </p>
           </div>
         </section>
       )}

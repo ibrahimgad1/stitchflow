@@ -189,6 +189,7 @@ modelsRouter.get("/models/:id/variants", (req, res) => {
              mv.current_quantity AS currentQuantity,
              mv.current_average_cost_minor AS currentAverageCostMinor,
              mv.safety_threshold AS safetyThreshold,
+             mv.barcode,
              mv.is_active AS isActive,
              mv.created_at AS createdAt, mv.updated_at AS updatedAt
       FROM model_variants mv
@@ -227,16 +228,21 @@ modelsRouter.post("/models/:id/variants", (req, res) => {
   }
 
   const id = randomUUID();
+  const modelRow = db.prepare("SELECT model_code FROM models WHERE id = ?").get(req.params.id) as { model_code: string } | undefined;
+  const sizeRow = db.prepare("SELECT name FROM sizes WHERE id = ?").get(parsed.data.sizeId) as { name: string } | undefined;
+  const colorRow = db.prepare("SELECT name FROM colors WHERE id = ?").get(parsed.data.colorId) as { name: string } | undefined;
+  const barcode = `${modelRow?.model_code ?? "GEN"}-${sizeRow?.name ?? parsed.data.sizeId}-${colorRow?.name ?? parsed.data.colorId}-${id.slice(0, 6).toUpperCase()}`;
 
   try {
     db.prepare(`
-      INSERT INTO model_variants (id, model_id, size_id, color_id, is_active)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO model_variants (id, model_id, size_id, color_id, barcode, is_active)
+      VALUES (?, ?, ?, ?, ?, ?)
     `).run(
       id,
       req.params.id,
       parsed.data.sizeId,
       parsed.data.colorId,
+      barcode,
       parsed.data.isActive === false ? 0 : 1
     );
 

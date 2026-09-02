@@ -3,7 +3,12 @@ import { z } from "zod";
 import { getDatabase } from "../database/connection.js";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { createMaterialReceiving } from "../services/purchasing.js";
-import { likePattern, paginatedResponse, parsePagination } from "../utils/pagination.js";
+import { isoDateSchema } from "../utils/date.js";
+import {
+  likePattern,
+  paginatedResponse,
+  parsePagination,
+} from "../utils/pagination.js";
 
 export const materialReceivingsRouter = Router();
 
@@ -11,19 +16,19 @@ const receivingItemSchema = z.object({
   materialId: z.string().trim().min(1),
   quantity: z.number().positive(),
   unitPrice: z.number().min(0),
-  notes: z.string().trim().optional().nullable()
+  notes: z.string().trim().optional().nullable(),
 });
 
 const receivingSchema = z.object({
   supplierId: z.string().trim().min(1),
-  receivingDate: z.string().trim().min(1),
-  dueDate: z.string().trim().optional().nullable(),
+  receivingDate: isoDateSchema,
+  dueDate: isoDateSchema.optional().nullable(),
   documentReference: z.string().trim().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
   items: z.array(receivingItemSchema).min(1),
   paidAmount: z.number().min(0).optional(),
   safeId: z.string().trim().min(1).optional().nullable(),
-  paymentMethodId: z.string().trim().min(1).optional().nullable()
+  paymentMethodId: z.string().trim().min(1).optional().nullable(),
 });
 
 materialReceivingsRouter.use(requireAuth);
@@ -36,7 +41,7 @@ materialReceivingsRouter.get("/material-receivings", (req, res) => {
 
   if (params.search) {
     conditions.push(
-      "(material_receivings.receiving_number LIKE ? ESCAPE '\\' OR suppliers.name LIKE ? ESCAPE '\\')"
+      "(material_receivings.receiving_number LIKE ? ESCAPE '\\' OR suppliers.name LIKE ? ESCAPE '\\')",
     );
     const pattern = likePattern(params.search);
     values.push(pattern, pattern);
@@ -51,16 +56,19 @@ materialReceivingsRouter.get("/material-receivings", (req, res) => {
 
   const where = conditions.join(" AND ");
   const total = db
-    .prepare(`
+    .prepare(
+      `
       SELECT COUNT(*) AS count
       FROM material_receivings
       JOIN suppliers ON suppliers.id = material_receivings.supplier_id
       WHERE ${where}
-    `)
+    `,
+    )
     .get(...values) as { count: number };
 
   const rows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT material_receivings.id,
              material_receivings.receiving_number AS receivingNumber,
              material_receivings.supplier_id AS supplierId,
@@ -79,7 +87,8 @@ materialReceivingsRouter.get("/material-receivings", (req, res) => {
       WHERE ${where}
       ORDER BY material_receivings.receiving_date DESC, material_receivings.created_at DESC
       LIMIT ? OFFSET ?
-    `)
+    `,
+    )
     .all(...values, params.pageSize, (params.page - 1) * params.pageSize);
 
   res.json(paginatedResponse(rows, total.count, params));
@@ -88,7 +97,8 @@ materialReceivingsRouter.get("/material-receivings", (req, res) => {
 materialReceivingsRouter.get("/material-receivings/:id", (req, res) => {
   const db = getDatabase();
   const receiving = db
-    .prepare(`
+    .prepare(
+      `
       SELECT material_receivings.id,
              material_receivings.receiving_number AS receivingNumber,
              material_receivings.supplier_id AS supplierId,
@@ -105,7 +115,8 @@ materialReceivingsRouter.get("/material-receivings/:id", (req, res) => {
       FROM material_receivings
       JOIN suppliers ON suppliers.id = material_receivings.supplier_id
       WHERE material_receivings.id = ?
-    `)
+    `,
+    )
     .get(req.params.id);
 
   if (!receiving) {
@@ -114,7 +125,8 @@ materialReceivingsRouter.get("/material-receivings/:id", (req, res) => {
   }
 
   const items = db
-    .prepare(`
+    .prepare(
+      `
       SELECT material_receiving_items.id,
              material_receiving_items.material_id AS materialId,
              materials.name AS materialName,
@@ -125,40 +137,47 @@ materialReceivingsRouter.get("/material-receivings/:id", (req, res) => {
       FROM material_receiving_items
       JOIN materials ON materials.id = material_receiving_items.material_id
       WHERE material_receiving_items.receiving_id = ?
-    `)
+    `,
+    )
     .all(req.params.id);
 
   res.json({ data: { ...receiving, items } });
 });
 
-materialReceivingsRouter.post("/material-receivings", (req: AuthenticatedRequest, res) => {
-  const parsed = receivingSchema.safeParse(req.body);
+materialReceivingsRouter.post(
+  "/material-receivings",
+  (req: AuthenticatedRequest, res) => {
+    const parsed = receivingSchema.safeParse(req.body);
 
-  if (!parsed.success) {
-    res.status(400).json({ statusCode: 400, message: "Invalid receiving data" });
-    return;
-  }
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ statusCode: 400, message: "Invalid receiving data" });
+      return;
+    }
 
-  const db = getDatabase();
+    const db = getDatabase();
 
-  try {
-    const result = createMaterialReceiving(db, {
-      ...parsed.data,
-      createdBy: req.user?.id
-    });
+    try {
+      const result = createMaterialReceiving(db, {
+        ...parsed.data,
+        createdBy: req.user?.id,
+      });
 
-    res.status(201).json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create receiving";
-    const statusCode =
-      message.includes("not found") ||
-      message.includes("required") ||
-      message.includes("cannot exceed")
-        ? 400
-        : message.includes("Insufficient")
-          ? 409
-          : 400;
+      res.status(201).json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not create receiving";
+      const statusCode =
+        message.includes("not found") ||
+        message.includes("required") ||
+        message.includes("cannot exceed")
+          ? 400
+          : message.includes("Insufficient")
+            ? 409
+            : 400;
 
-    res.status(statusCode).json({ statusCode, message });
-  }
-});
+      res.status(statusCode).json({ statusCode, message });
+    }
+  },
+);

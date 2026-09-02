@@ -58,6 +58,8 @@ export type SupplierLedgerResponse = PaginatedResponse<{
   balanceAfterMinor: number;
 }> & {
   balanceMinor: number;
+  openingMinor?: number;
+  totals?: { debit: number; credit: number };
 };
 
 export type StockMovement = {
@@ -151,10 +153,16 @@ export async function createSupplierPayment(payload: {
   return response.data;
 }
 
-export async function getSupplierLedger(supplierId: string, params?: ListParams) {
-  const response = await api.get<SupplierLedgerResponse>(
-    `/suppliers/${supplierId}/ledger${queryString(params)}`
-  );
+export async function getSupplierLedger(
+  supplierId: string,
+  params?: ListParams & { dateFrom?: string; dateTo?: string }
+) {
+  const qs = queryString(params as ListParams);
+  const extra: string[] = [];
+  if ((params as any)?.dateFrom) extra.push(`dateFrom=${encodeURIComponent((params as any).dateFrom)}`);
+  if ((params as any)?.dateTo) extra.push(`dateTo=${encodeURIComponent((params as any).dateTo)}`);
+  const url = `/suppliers/${supplierId}/ledger${qs}${extra.length ? (qs ? "&" : "?") + extra.join("&") : ""}`;
+  const response = await api.get<SupplierLedgerResponse>(url);
   return response.data;
 }
 

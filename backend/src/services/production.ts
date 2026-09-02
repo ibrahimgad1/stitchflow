@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
+import { recordAudit } from "../utils/audit.js";
 import { nextDocumentNumber } from "../utils/documentSequence.js";
 import { calculateWeightedAverageMinor } from "../utils/weightedAverage.js";
 import { toMinorUnits } from "../utils/money.js";
@@ -61,7 +62,7 @@ type BatchRow = {
 function getBatch(db: Database.Database, batchId: string): BatchRow | undefined {
   return db
     .prepare(`
-      SELECT id, batch_number AS batchNumber, model_id AS modelId, status,
+      SELECT id, batch_number AS batchNumber, model_id AS modelId, status, stage,
              planned_quantity AS plannedQuantity, good_quantity AS goodQuantity,
              damaged_quantity AS damagedQuantity, wasted_quantity AS wastedQuantity,
              start_date AS startDate, completed_date AS completedDate,
@@ -304,7 +305,8 @@ export function updateProductionBatch(
 export function startProductionBatch(
   db: Database.Database,
   batchId: string,
-  startDate?: string
+  startDate?: string,
+  createdBy?: string
 ): void {
   const batch = getBatch(db, batchId);
   if (!batch) {
@@ -315,14 +317,24 @@ export function startProductionBatch(
     throw new Error("Only draft batches can be started");
   }
 
+  const effectiveStartDate = startDate ?? new Date().toISOString().slice(0, 10);
   db.prepare(`
     UPDATE production_batches
     SET status = 'in_progress', start_date = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).run(startDate ?? new Date().toISOString().slice(0, 10), batchId);
+  `).run(effectiveStartDate, batchId);
+
+  recordAudit(db, {
+    userId: createdBy,
+    action: "start_production_batch",
+    entityType: "production_batch",
+    entityId: batchId,
+    before: { status: batch.status, startDate: batch.startDate },
+    after: { status: "in_progress", startDate: effectiveStartDate },
+  });
 }
 
-export function cancelProductionBatch(db: Database.Database, batchId: string): void {
+export function cancelProductionBatch(db: Database.Database, batchId: string, cancelledBy?: string): void {
   const batch = getBatch(db, batchId);
   if (!batch) {
     throw new Error("Production batch not found");
@@ -334,9 +346,69 @@ export function cancelProductionBatch(db: Database.Database, batchId: string): v
 
   db.prepare(`
     UPDATE production_batches
-    SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+    SET status = 'cancelled', stage = 'draft', updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(batchId);
+
+  recordAudit(db, {
+    userId: cancelledBy,
+    action: "cancel_production_batch",
+    entityType: "production_batch",
+    entityId: batchId,
+    before: { status: batch.status, stage: batch.stage },
+    after: { status: "cancelled", stage: "draft" },
+  });
+}
+
+export function updateProductionStage(
+  db: Database.Database,
+  batchId: string,
+  newStage: ProductionStage,
+  updatedBy?: string
+): void {
+  if (!PRODUCTION_STAGES.includes(newStage)) {
+    throw new Error("Invalid stage");
+  }
+  const batch = db
+    .prepare(`SELECT id, status, stage FROM production_batches WHERE id = ?`)
+    .get(batchId) as { id: string; status: string; stage: ProductionStage } | undefined;
+  if (!batch) throw new Error("Production batch not found");
+  if (batch.status === "completed" || batch.status === "cancelled") {
+    throw new Error("Cannot change stage of completed/cancelled batch");
+  }
+  if (newStage === "completed") {
+    throw new Error("Use complete endpoint to mark as completed");
+  }
+  if (newStage === "draft" && batch.stage !== "draft") {
+    throw new Error("Cannot move back to draft");
+  }
+  const oldIdx = STAGE_INDEX[batch.stage];
+  const newIdx = STAGE_INDEX[newStage];
+  if (newIdx < oldIdx) {
+    throw new Error("Cannot move stage backwards");
+  }
+  let newStatus: string = batch.status;
+  if (newStage === "draft") newStatus = "draft";
+  else if (["cutting", "sewing", "finishing"].includes(newStage)) newStatus = "in_progress";
+
+  if (oldIdx === 0 && newIdx >= 1) {
+    db.prepare(
+      `UPDATE production_batches SET stage = ?, status = ?, start_date = COALESCE(start_date, date('now')), updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).run(newStage, newStatus, batchId);
+  } else {
+    db.prepare(
+      `UPDATE production_batches SET stage = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).run(newStage, newStatus, batchId);
+  }
+
+  recordAudit(db, {
+    userId: updatedBy,
+    action: "update_production_stage",
+    entityType: "production_batch",
+    entityId: batchId,
+    before: { status: batch.status, stage: batch.stage },
+    after: { status: newStatus, stage: newStage },
+  });
 }
 
 export function completeProductionBatch(
@@ -613,6 +685,25 @@ export function completeProductionBatch(
       costPerGoodPieceMinor,
       batchId
     );
+
+    recordAudit(db, {
+      userId: input.createdBy,
+      action: "complete_production_batch",
+      entityType: "production_batch",
+      entityId: batchId,
+      before: {
+        status: batch.status,
+        plannedQuantity: batch.plannedQuantity,
+      },
+      after: {
+        status: "completed",
+        goodQuantity,
+        damagedQuantity,
+        wastedQuantity,
+        totalCostMinor,
+        costPerGoodPieceMinor,
+      },
+    });
 
     return {
       directCostMinor,

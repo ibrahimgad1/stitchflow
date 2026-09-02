@@ -10,16 +10,18 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Moon,
   Plus,
   Receipt,
   Search,
   Settings2,
   ShoppingCart,
   Sparkles,
+  Sun,
   Truck,
   User,
   Wallet,
-  X
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -27,16 +29,22 @@ import { useQuery } from "@tanstack/react-query";
 import { useI18n } from "../i18n";
 import type { AuthUser } from "../lib/api";
 import { CommandPalette } from "./CommandPalette";
+import { getTheme, toggleTheme } from "../lib/theme";
 
 type NavItem = { to: string; key: string; end?: boolean };
-type NavGroup = { id: string; labelKey: string; icon: React.ElementType; items: NavItem[] };
+type NavGroup = {
+  id: string;
+  labelKey: string;
+  icon: React.ElementType;
+  items: NavItem[];
+};
 
 const navGroups: NavGroup[] = [
   {
     id: "dashboard",
     labelKey: "nav.dashboard",
     icon: LayoutDashboard,
-    items: [{ to: "/", key: "nav.dashboard", end: true }]
+    items: [{ to: "/", key: "nav.dashboard", end: true }],
   },
   {
     id: "sales",
@@ -46,8 +54,8 @@ const navGroups: NavGroup[] = [
       { to: "/customers", key: "nav.customers" },
       { to: "/sales-invoices", key: "nav.sales" },
       { to: "/customer-payments", key: "nav.customerPayments" },
-      { to: "/customer-statements", key: "nav.customerStatements" }
-    ]
+      { to: "/customer-statements", key: "nav.customerStatements" },
+    ],
   },
   {
     id: "purchasing",
@@ -58,8 +66,8 @@ const navGroups: NavGroup[] = [
       { to: "/supplier-statements", key: "nav.supplierStatements" },
       { to: "/materials", key: "nav.materials" },
       { to: "/material-receivings", key: "nav.receivings" },
-      { to: "/supplier-payments", key: "nav.supplierPayments" }
-    ]
+      { to: "/supplier-payments", key: "nav.supplierPayments" },
+    ],
   },
   {
     id: "production",
@@ -71,8 +79,8 @@ const navGroups: NavGroup[] = [
       { to: "/finished-inventory", key: "nav.finishedStock" },
       { to: "/stock-reports", key: "nav.stockReports" },
       { to: "/stock-movements", key: "nav.stockMovements" },
-      { to: "/production-costs", key: "nav.productionCosts" }
-    ]
+      { to: "/production-costs", key: "nav.productionCosts" },
+    ],
   },
   {
     id: "finance",
@@ -81,54 +89,114 @@ const navGroups: NavGroup[] = [
     items: [
       { to: "/expenses", key: "nav.expenses" },
       { to: "/treasury", key: "nav.treasury" },
-      { to: "/safes", key: "nav.safes" }
-    ]
+      { to: "/safes", key: "nav.safes" },
+    ],
   },
   {
     id: "settings",
     labelKey: "nav.settings",
     icon: Settings2,
-    items: [{ to: "/settings", key: "nav.settings" }]
-  }
+    items: [{ to: "/settings", key: "nav.settings" }],
+  },
 ];
 
 const routeMeta: Record<string, { titleKey: string; descKey: string }> = {
   "/": { titleKey: "dashboard.title", descKey: "dashboard.snapshotDesc" },
-  "/customers": { titleKey: "customers.title", descKey: "customers.description" },
+  "/customers": {
+    titleKey: "customers.title",
+    descKey: "customers.description",
+  },
   "/sales-invoices": { titleKey: "sales.title", descKey: "sales.description" },
-  "/customer-payments": { titleKey: "customerPayments.title", descKey: "customerPayments.description" },
-  "/customer-statements": { titleKey: "statements.titleCustomer", descKey: "statements.description" },
-  "/suppliers": { titleKey: "suppliers.title", descKey: "suppliers.description" },
-  "/supplier-statements": { titleKey: "statements.titleSupplier", descKey: "statements.description" },
-  "/materials": { titleKey: "materials.title", descKey: "materials.description" },
-  "/material-receivings": { titleKey: "receivings.title", descKey: "receivings.description" },
-  "/supplier-payments": { titleKey: "supplierPayments.title", descKey: "supplierPayments.description" },
-  "/production-batches": { titleKey: "production.title", descKey: "production.description" },
-  "/finished-inventory": { titleKey: "finished.title", descKey: "finished.description" },
+  "/customer-payments": {
+    titleKey: "customerPayments.title",
+    descKey: "customerPayments.description",
+  },
+  "/customer-statements": {
+    titleKey: "statements.titleCustomer",
+    descKey: "statements.description",
+  },
+  "/suppliers": {
+    titleKey: "suppliers.title",
+    descKey: "suppliers.description",
+  },
+  "/supplier-statements": {
+    titleKey: "statements.titleSupplier",
+    descKey: "statements.description",
+  },
+  "/materials": {
+    titleKey: "materials.title",
+    descKey: "materials.description",
+  },
+  "/material-receivings": {
+    titleKey: "receivings.title",
+    descKey: "receivings.description",
+  },
+  "/supplier-payments": {
+    titleKey: "supplierPayments.title",
+    descKey: "supplierPayments.description",
+  },
+  "/production-batches": {
+    titleKey: "production.title",
+    descKey: "production.description",
+  },
+  "/finished-inventory": {
+    titleKey: "finished.title",
+    descKey: "finished.description",
+  },
   "/expenses": { titleKey: "expenses.title", descKey: "expenses.description" },
   "/treasury": { titleKey: "treasury.title", descKey: "treasury.description" },
-  "/stock-reports": { titleKey: "reports.stockTitle", descKey: "reports.rawStock" },
-  "/stock-movements": { titleKey: "reports.movementsTitle", descKey: "reports.rawMovements" },
-  "/production-costs": { titleKey: "reports.productionTitle", descKey: "reports.productionCosts" },
+  "/stock-reports": {
+    titleKey: "reports.stockTitle",
+    descKey: "reports.rawStock",
+  },
+  "/stock-movements": {
+    titleKey: "reports.movementsTitle",
+    descKey: "reports.rawMovements",
+  },
+  "/production-costs": {
+    titleKey: "reports.productionTitle",
+    descKey: "reports.productionCosts",
+  },
   "/models": { titleKey: "models.title", descKey: "models.description" },
   "/safes": { titleKey: "safes.title", descKey: "safes.description" },
-  "/settings": { titleKey: "settings.title", descKey: "settings.description" }
+  "/settings": { titleKey: "settings.title", descKey: "settings.description" },
 };
 
-export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+export function AppShell({
+  user,
+  onLogout,
+}: {
+  user: AuthUser;
+  onLogout: () => void;
+}) {
   const { t, lang, setLanguage } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar.collapsed") === "1");
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("sidebar.collapsed") === "1",
+  );
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [quickActionOpen, setQuickActionOpen] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(getTheme());
   const quickActionRef = useRef<HTMLDivElement>(null);
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem("sidebar.groups");
-    if (saved) try { return JSON.parse(saved); } catch { /* ignore */ }
-    return { dashboard: true, sales: true, purchasing: true, production: true, finance: true, settings: true };
+    if (saved)
+      try {
+        return JSON.parse(saved);
+      } catch {
+        /* ignore */
+      }
+    return {
+      dashboard: true,
+      sales: true,
+      purchasing: true,
+      production: true,
+      finance: true,
+      settings: true,
+    };
   });
 
   const alertsQuery = useQuery({
@@ -138,14 +206,18 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
       return getLowStockAlerts();
     },
     refetchInterval: 60000,
-    refetchOnWindowFocus: true
+    refetchOnWindowFocus: true,
   });
   const lowCount = alertsQuery.data?.total ?? 0;
   const lowMaterialsCount = alertsQuery.data?.lowMaterials.length ?? 0;
   const lowVariantsCount = alertsQuery.data?.lowVariants.length ?? 0;
 
   const activePath = "/" + location.pathname.split("/").slice(1, 2).join("/");
-  const meta = routeMeta[location.pathname] ?? routeMeta[activePath] ?? { titleKey: "dashboard.title", descKey: "dashboard.snapshotDesc" };
+  const meta = routeMeta[location.pathname] ??
+    routeMeta[activePath] ?? {
+      titleKey: "dashboard.title",
+      descKey: "dashboard.snapshotDesc",
+    };
 
   useEffect(() => {
     const title = t(meta.titleKey);
@@ -180,7 +252,10 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
   // Click outside quick action dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (quickActionRef.current && !quickActionRef.current.contains(event.target as Node)) {
+      if (
+        quickActionRef.current &&
+        !quickActionRef.current.contains(event.target as Node)
+      ) {
         setQuickActionOpen(false);
       }
     };
@@ -193,7 +268,18 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
   }
 
   return (
-    <main className={`app-shell ${collapsed ? "sidebar-collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}>
+    <main
+      className={`app-shell ${collapsed ? "sidebar-collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}
+    >
+      {mobileOpen ? (
+        <button
+          className="mobile-sidebar-backdrop"
+          onClick={() => setMobileOpen(false)}
+          type="button"
+          aria-label="إغلاق القائمة الجانبية"
+        />
+      ) : null}
+
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-header">
@@ -203,7 +289,9 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
             </div>
             {!collapsed ? (
               <div className="brand-text">
-                <h1 className="brand-title">{t("auth.appName") || "StitchFlow"}</h1>
+                <h1 className="brand-title">
+                  {t("auth.appName") || "StitchFlow"}
+                </h1>
                 <span className="brand-sub">إدارة مصانع الملابس</span>
               </div>
             ) : null}
@@ -222,11 +310,18 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
           {navGroups.map((group) => {
             const Icon = group.icon;
             const isOpen = openGroups[group.id] ?? true;
-            const hasActive = group.items.some((it) =>
-              location.pathname === it.to || (it.end ? location.pathname === "/" : location.pathname.startsWith(it.to))
+            const hasActive = group.items.some(
+              (it) =>
+                location.pathname === it.to ||
+                (it.end
+                  ? location.pathname === "/"
+                  : location.pathname.startsWith(it.to)),
             );
             return (
-              <div key={group.id} className={`nav-group ${hasActive ? "has-active" : ""}`}>
+              <div
+                key={group.id}
+                className={`nav-group ${hasActive ? "has-active" : ""}`}
+              >
                 <button
                   className="nav-group-header"
                   onClick={() => toggleGroup(group.id)}
@@ -236,27 +331,64 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
                   <Icon size={16} />
                   {!collapsed ? <span>{t(group.labelKey)}</span> : null}
                   {!collapsed ? (
-                    <ChevronDown size={14} className={`chevron ${isOpen ? "open" : ""}`} />
+                    <ChevronDown
+                      size={14}
+                      className={`chevron ${isOpen ? "open" : ""}`}
+                    />
                   ) : null}
                 </button>
                 {isOpen || collapsed ? (
                   <div className="nav-group-items">
                     {group.items.map((item) => {
-                      const isMaterials = item.to === "/materials" && lowMaterialsCount > 0;
-                      const isFinished = item.to === "/finished-inventory" && lowVariantsCount > 0;
+                      const isMaterials =
+                        item.to === "/materials" && lowMaterialsCount > 0;
+                      const isFinished =
+                        item.to === "/finished-inventory" &&
+                        lowVariantsCount > 0;
                       const showBadge = isMaterials || isFinished;
-                      const badgeCount = isMaterials ? lowMaterialsCount : lowVariantsCount;
+                      const badgeCount = isMaterials
+                        ? lowMaterialsCount
+                        : lowVariantsCount;
                       return (
-                        <NavLink end={item.end} key={item.to} to={item.to} title={t(item.key)} style={{ position: "relative" }}>
+                        <NavLink
+                          end={item.end}
+                          key={item.to}
+                          to={item.to}
+                          title={t(item.key)}
+                          style={{ position: "relative" }}
+                        >
                           {collapsed ? <Boxes size={16} /> : null}
                           <span>{t(item.key)}</span>
                           {showBadge && !collapsed ? (
-                            <span style={{ background: "#dc2626", color: "white", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 3 }}>
+                            <span
+                              style={{
+                                background: "#dc2626",
+                                color: "white",
+                                fontSize: 10,
+                                fontWeight: 700,
+                                padding: "1px 6px",
+                                borderRadius: 999,
+                                marginInlineStart: "auto",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 3,
+                              }}
+                            >
                               <AlertTriangle size={10} /> {badgeCount}
                             </span>
                           ) : null}
                           {showBadge && collapsed ? (
-                            <span style={{ position: "absolute", top: 2, insetInlineEnd: 2, width: 8, height: 8, background: "#dc2626", borderRadius: "50%" }} />
+                            <span
+                              style={{
+                                position: "absolute",
+                                top: 2,
+                                insetInlineEnd: 2,
+                                width: 8,
+                                height: 8,
+                                background: "#dc2626",
+                                borderRadius: "50%",
+                              }}
+                            />
                           ) : null}
                         </NavLink>
                       );
@@ -272,14 +404,19 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
           <button
             onClick={() => setCommandPaletteOpen(true)}
             className="command-bar-trigger"
-            style={{ width: "100%", justifyContent: collapsed ? "center" : "space-between" }}
+            style={{
+              width: "100%",
+              justifyContent: collapsed ? "center" : "space-between",
+            }}
             type="button"
           >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <Search size={14} />
               {!collapsed ? <span>بحث سريع</span> : null}
             </div>
-            {!collapsed ? <span className="command-key-badge">Ctrl K</span> : null}
+            {!collapsed ? (
+              <span className="command-key-badge">Ctrl K</span>
+            ) : null}
           </button>
         </div>
       </aside>
@@ -335,7 +472,7 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
                     padding: "6px",
                     zIndex: 50,
                     display: "grid",
-                    gap: "2px"
+                    gap: "2px",
                   }}
                 >
                   <button
@@ -347,7 +484,10 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
                     }}
                     type="button"
                   >
-                    <ShoppingCart size={15} style={{ color: "var(--primary)" }} />
+                    <ShoppingCart
+                      size={15}
+                      style={{ color: "var(--primary)" }}
+                    />
                     <span>فاتورة مبيعات جديدة</span>
                   </button>
                   <button
@@ -409,10 +549,32 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
               <span className="role-pill">{user.role}</span>
             </div>
 
+            {/* Theme Toggle Button */}
+            <button
+              className="ghost-button"
+              style={{ minHeight: "36px", padding: "0 10px" }}
+              onClick={() => {
+                const newTheme = toggleTheme();
+                setTheme(newTheme);
+              }}
+              type="button"
+              title={
+                theme === "light"
+                  ? t("theme.switchToDark")
+                  : t("theme.switchToLight")
+              }
+            >
+              {theme === "light" ? <Moon size={15} /> : <Sun size={15} />}
+            </button>
+
             {/* Logout Button */}
             <button
               className="ghost-button"
-              style={{ minHeight: "36px", padding: "0 10px", color: "var(--danger)" }}
+              style={{
+                minHeight: "36px",
+                padding: "0 10px",
+                color: "var(--danger)",
+              }}
               onClick={onLogout}
               type="button"
               title={t("auth.signOut")}

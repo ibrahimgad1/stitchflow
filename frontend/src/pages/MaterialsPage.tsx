@@ -7,8 +7,11 @@ import {
   PaginationBar,
   showToast,
   StatusPill,
-  useDebouncedValue
+  useDebouncedValue,
 } from "../components/ListPageShell";
+import { BarcodeDisplay } from "../components/BarcodeDisplay";
+import { BarcodeInput } from "../components/BarcodeInput";
+import { CSVImportModal } from "../components/CSVImportModal";
 import { useI18n } from "../i18n";
 import { exportToCsv } from "../lib/export";
 import {
@@ -17,11 +20,15 @@ import {
   isActive,
   listMaterials,
   listSuppliers,
-  updateMaterial
+  updateMaterial,
 } from "../lib/master-data";
 import { adjustMaterialStock, listMaterialMovements } from "../lib/purchasing";
-import { updateMaterialThreshold } from "../lib/alerts";
+import {
+  bulkUpdateMaterialThresholds,
+  updateMaterialThreshold,
+} from "../lib/alerts";
 import type { Material } from "../lib/types";
+import type { ThresholdUpdate } from "../lib/csv";
 
 const emptyForm = {
   name: "",
@@ -29,7 +36,7 @@ const emptyForm = {
   unit: "meter",
   supplierId: "",
   notes: "",
-  isActive: true
+  isActive: true,
 };
 
 export function MaterialsPage() {
@@ -44,35 +51,45 @@ export function MaterialsPage() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [fieldError, setFieldError] = useState("");
-  const [movementsMaterialId, setMovementsMaterialId] = useState<string | null>(null);
+  const [movementsMaterialId, setMovementsMaterialId] = useState<string | null>(
+    null,
+  );
   const [adjustMaterial, setAdjustMaterial] = useState<Material | null>(null);
   const [adjustForm, setAdjustForm] = useState({ newQuantity: "", reason: "" });
   const [adjustError, setAdjustError] = useState("");
-  const [thresholdMaterial, setThresholdMaterial] = useState<Material | null>(null);
+  const [thresholdMaterial, setThresholdMaterial] = useState<Material | null>(
+    null,
+  );
   const [thresholdValue, setThresholdValue] = useState("");
   const [thresholdError, setThresholdError] = useState("");
+  // Barcode scanner states
+  const [barcodeSearch, setBarcodeSearch] = useState("");
+  const [scannerError, setScannerError] = useState("");
+  // CSV import modal state
+  const [csvImportOpen, setCSVImportOpen] = useState(false);
 
   const materialsQuery = useQuery({
     queryKey: ["materials", page, pageSize, debouncedSearch],
-    queryFn: () => listMaterials({ page, pageSize, search: debouncedSearch })
+    queryFn: () => listMaterials({ page, pageSize, search: debouncedSearch }),
   });
 
   const suppliersQuery = useQuery({
     queryKey: ["suppliers", "options"],
-    queryFn: () => listSuppliers({ page: 1, pageSize: 100 })
+    queryFn: () => listSuppliers({ page: 1, pageSize: 100 }),
   });
 
   const movementsQuery = useQuery({
     queryKey: ["material-movements", movementsMaterialId],
-    queryFn: () => listMaterialMovements(movementsMaterialId!, { page: 1, pageSize: 50 }),
-    enabled: Boolean(movementsMaterialId)
+    queryFn: () =>
+      listMaterialMovements(movementsMaterialId!, { page: 1, pageSize: 50 }),
+    enabled: Boolean(movementsMaterialId),
   });
 
   const adjustMutation = useMutation({
     mutationFn: async () =>
       adjustMaterialStock(adjustMaterial!.id, {
         newQuantity: Number(adjustForm.newQuantity),
-        reason: adjustForm.reason.trim()
+        reason: adjustForm.reason.trim(),
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["materials"] });
@@ -81,11 +98,12 @@ export function MaterialsPage() {
       setAdjustError("");
       showToast(t("common.save") + " ✓");
     },
-    onError: () => setAdjustError(t("materials.adjust.error"))
+    onError: () => setAdjustError(t("materials.adjust.error")),
   });
 
   const thresholdMutation = useMutation({
-    mutationFn: async () => updateMaterialThreshold(thresholdMaterial!.id, Number(thresholdValue)),
+    mutationFn: async () =>
+      updateMaterialThreshold(thresholdMaterial!.id, Number(thresholdValue)),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["materials"] });
       setThresholdMaterial(null);
@@ -93,7 +111,24 @@ export function MaterialsPage() {
       setThresholdError("");
       showToast(t("common.save") + " ✓");
     },
-    onError: () => setThresholdError(t("errors.couldNotSave"))
+    onError: () => setThresholdError(t("errors.couldNotSave")),
+  });
+
+  const bulkImportMutation = useMutation({
+    mutationFn: async (updates: ThresholdUpdate[]) =>
+      bulkUpdateMaterialThresholds(updates),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["materials"] });
+      const message =
+        `Imported ${result.successful.length} thresholds` +
+        (result.failed.length > 0 ? ` (${result.failed.length} failed)` : "");
+      showToast(message + " ✓");
+      setCSVImportOpen(false);
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Import failed";
+      showToast(message, true);
+    },
   });
 
   const saveMutation = useMutation({
@@ -107,10 +142,12 @@ export function MaterialsPage() {
         unit: form.unit.trim(),
         supplierId: form.supplierId || null,
         notes: form.notes.trim() || null,
-        isActive: form.isActive
+        isActive: form.isActive,
       };
 
-      return editing ? updateMaterial(editing.id, payload) : createMaterial(payload);
+      return editing
+        ? updateMaterial(editing.id, payload)
+        : createMaterial(payload);
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["materials"] });
@@ -125,7 +162,7 @@ export function MaterialsPage() {
       const msg = e instanceof Error ? e.message : t("materials.form.error");
       if (msg === t("errors.required")) setFieldError(msg);
       else setError(msg);
-    }
+    },
   });
 
   function openCreate() {
@@ -144,11 +181,19 @@ export function MaterialsPage() {
       unit: material.unit,
       supplierId: material.supplierId ?? "",
       notes: material.notes ?? "",
-      isActive: isActive(material.isActive)
+      isActive: isActive(material.isActive),
     });
     setError("");
     setFieldError("");
     setModalOpen(true);
+  }
+
+  async function handleBarcodeScanned(barcode: string) {
+    setScannerError("");
+    // Search by barcode or material name
+    setSearch(barcode);
+    setPage(1);
+    showToast(`جاري البحث عن: ${barcode}`);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -164,13 +209,26 @@ export function MaterialsPage() {
         { header: "اسم الخامة", accessor: (m) => m.name },
         { header: "اللون", accessor: (m) => m.colorName || "-" },
         { header: "وحدة القياس", accessor: (m) => m.unit },
-        { header: "الكمية المتاحة بالمخزن", accessor: (m) => m.currentQuantity },
-        { header: "متوسط التكلفة (ج.م)", accessor: (m) => (m.weightedAverageCostMinor / 100).toFixed(2) },
-        { header: "إجمالي القيمة (ج.م)", accessor: (m) => ((m.currentQuantity * m.weightedAverageCostMinor) / 100).toFixed(2) },
+        {
+          header: "الكمية المتاحة بالمخزن",
+          accessor: (m) => m.currentQuantity,
+        },
+        {
+          header: "متوسط التكلفة (ج.م)",
+          accessor: (m) => (m.weightedAverageCostMinor / 100).toFixed(2),
+        },
+        {
+          header: "إجمالي القيمة (ج.م)",
+          accessor: (m) =>
+            ((m.currentQuantity * m.weightedAverageCostMinor) / 100).toFixed(2),
+        },
         { header: "المورد المفضل", accessor: (m) => m.supplierName || "-" },
-        { header: "الحالة", accessor: (m) => (isActive(m.isActive) ? "نشط" : "غير نشط") }
+        {
+          header: "الحالة",
+          accessor: (m) => (isActive(m.isActive) ? "نشط" : "غير نشط"),
+        },
       ],
-      rows
+      rows,
     );
   }
 
@@ -198,11 +256,85 @@ export function MaterialsPage() {
               totalPages={meta.totalPages}
               onPageChange={setPage}
               pageSize={pageSize}
-              onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+              onPageSizeChange={(s) => {
+                setPageSize(s);
+                setPage(1);
+              }}
             />
           ) : null
         }
       >
+        {/* Barcode Scanner Section */}
+        <div
+          style={{
+            marginBottom: 20,
+            padding: "12px",
+            background: "#fffbeb",
+            border: "1px solid #fbbf24",
+            borderRadius: "var(--radius)",
+          }}
+        >
+          <label
+            style={{
+              display: "block",
+              marginBottom: 8,
+              fontSize: "14px",
+              fontWeight: 600,
+            }}
+          >
+            🔍 ماسح الرموز الشريطية
+          </label>
+          <BarcodeInput
+            onScanned={handleBarcodeScanned}
+            onError={(err) => setScannerError(err)}
+            placeholder="امسح الرمز الشريطي أو اكتبه هنا..."
+            autoFocus
+          />
+          {scannerError && (
+            <p style={{ color: "#dc2626", fontSize: "12px", marginTop: 4 }}>
+              {scannerError}
+            </p>
+          )}
+        </div>
+
+        {/* Bulk Import Section */}
+        <div
+          style={{
+            marginBottom: 20,
+            padding: "12px",
+            background: "#e0f2fe",
+            border: "1px solid #0284c7",
+            borderRadius: "var(--radius)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "14px",
+                fontWeight: 600,
+                marginBottom: 4,
+              }}
+            >
+              📥 استيراد حدود أمان من ملف CSV
+            </label>
+            <p style={{ fontSize: "12px", color: "#333", margin: 0 }}>
+              قم بتحميل ملف CSV لتحديث حدود الأمان لعدة خامات دفعة واحدة
+            </p>
+          </div>
+          <button
+            className="button primary"
+            onClick={() => setCSVImportOpen(true)}
+            type="button"
+            style={{ marginRight: 12 }}
+          >
+            فتح المستورد
+          </button>
+        </div>
+
         <table>
           <thead>
             <tr>
@@ -229,38 +361,100 @@ export function MaterialsPage() {
                   <EmptyState
                     title={t("materials.noMaterials")}
                     description={t("materials.description")}
-                    action={<button className="primary-button" onClick={openCreate} type="button">{t("materials.add")}</button>}
+                    action={
+                      <button
+                        className="primary-button"
+                        onClick={openCreate}
+                        type="button"
+                      >
+                        {t("materials.add")}
+                      </button>
+                    }
                   />
                 </td>
               </tr>
             ) : (
               rows.map((material) => (
-                <tr key={material.id} style={material.safetyThreshold > 0 && material.currentQuantity < material.safetyThreshold ? { background: "#fef2f2" } : undefined}>
+                <tr
+                  key={material.id}
+                  style={
+                    material.safetyThreshold > 0 &&
+                    material.currentQuantity < material.safetyThreshold
+                      ? { background: "#fef2f2" }
+                      : undefined
+                  }
+                >
                   <td>{material.name}</td>
                   <td>{material.colorName || "-"}</td>
                   <td>{material.unit}</td>
                   <td>
-                    <span style={material.safetyThreshold > 0 && material.currentQuantity < material.safetyThreshold ? { color: "#dc2626", fontWeight: 700 } : undefined}>
+                    <span
+                      style={
+                        material.safetyThreshold > 0 &&
+                        material.currentQuantity < material.safetyThreshold
+                          ? { color: "#dc2626", fontWeight: 700 }
+                          : undefined
+                      }
+                    >
                       {material.currentQuantity}
                     </span>
-                    {material.safetyThreshold > 0 && material.currentQuantity < material.safetyThreshold ? <span style={{ color: "#dc2626", fontSize: 11, display: "block" }}>⚠️ منخفض</span> : null}
+                    {material.safetyThreshold > 0 &&
+                    material.currentQuantity < material.safetyThreshold ? (
+                      <span
+                        style={{
+                          color: "#dc2626",
+                          fontSize: 11,
+                          display: "block",
+                        }}
+                      >
+                        ⚠️ منخفض
+                      </span>
+                    ) : null}
                   </td>
                   <td>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <div
+                      style={{ display: "flex", gap: 6, alignItems: "center" }}
+                    >
                       <span>{material.safetyThreshold ?? 0}</span>
-                      <button className="link-button" style={{ fontSize: 11 }} onClick={() => { setThresholdMaterial(material); setThresholdValue(String(material.safetyThreshold ?? 0)); setThresholdError(""); }} type="button">تعديل</button>
+                      <button
+                        className="link-button"
+                        style={{ fontSize: 11 }}
+                        onClick={() => {
+                          setThresholdMaterial(material);
+                          setThresholdValue(
+                            String(material.safetyThreshold ?? 0),
+                          );
+                          setThresholdError("");
+                        }}
+                        type="button"
+                      >
+                        تعديل
+                      </button>
                     </div>
                   </td>
                   <td dir="ltr">
                     {formatMoney(material.weightedAverageCostMinor)}
-                    {material.currentQuantity > 0 && material.weightedAverageCostMinor === 0 ? (
-                      <span style={{ color: "#924437", fontSize: 12, display: "block" }}>{t("materials.avgWarning")}</span>
+                    {material.currentQuantity > 0 &&
+                    material.weightedAverageCostMinor === 0 ? (
+                      <span
+                        style={{
+                          color: "#924437",
+                          fontSize: 12,
+                          display: "block",
+                        }}
+                      >
+                        {t("materials.avgWarning")}
+                      </span>
                     ) : null}
                   </td>
                   <td>{material.supplierName || "-"}</td>
                   <td>
                     <div className="row-actions">
-                      <button className="link-button" onClick={() => openEdit(material)} type="button">
+                      <button
+                        className="link-button"
+                        onClick={() => openEdit(material)}
+                        type="button"
+                      >
                         {t("materials.actions.edit")}
                       </button>
                       <button
@@ -276,7 +470,7 @@ export function MaterialsPage() {
                           setAdjustMaterial(material);
                           setAdjustForm({
                             newQuantity: String(material.currentQuantity),
-                            reason: ""
+                            reason: "",
                           });
                           setAdjustError("");
                         }}
@@ -301,37 +495,55 @@ export function MaterialsPage() {
           <form className="form-grid" onSubmit={handleSubmit}>
             {error ? <p className="form-error">{error}</p> : null}
             <label>
-              {t("materials.form.name")} <span style={{ color: "#b42318" }}>*</span>
+              {t("materials.form.name")}{" "}
+              <span style={{ color: "#b42318" }}>*</span>
               <input
                 required
                 value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, name: event.target.value })
+                }
                 aria-invalid={Boolean(fieldError)}
               />
-              {fieldError ? <span style={{ color: "#b42318", fontSize: 12 }}>{fieldError}</span> : null}
+              {fieldError ? (
+                <span style={{ color: "#b42318", fontSize: 12 }}>
+                  {fieldError}
+                </span>
+              ) : null}
             </label>
             <label>
               {t("materials.form.colorName")}
               <input
                 value={form.colorName}
-                onChange={(event) => setForm({ ...form, colorName: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, colorName: event.target.value })
+                }
               />
             </label>
             <label>
-              {t("materials.form.unit")} <span style={{ color: "#b42318" }}>*</span>
+              {t("materials.form.unit")}{" "}
+              <span style={{ color: "#b42318" }}>*</span>
               <input
                 required
                 value={form.unit}
-                onChange={(event) => setForm({ ...form, unit: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, unit: event.target.value })
+                }
                 aria-invalid={Boolean(fieldError)}
               />
-              {fieldError ? <span style={{ color: "#b42318", fontSize: 12 }}>{fieldError}</span> : null}
+              {fieldError ? (
+                <span style={{ color: "#b42318", fontSize: 12 }}>
+                  {fieldError}
+                </span>
+              ) : null}
             </label>
             <label>
               {t("materials.form.supplier")}
               <select
                 value={form.supplierId}
-                onChange={(event) => setForm({ ...form, supplierId: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, supplierId: event.target.value })
+                }
               >
                 <option value="">{t("materials.form.none")}</option>
                 {(suppliersQuery.data?.data ?? []).map((supplier) => (
@@ -346,19 +558,27 @@ export function MaterialsPage() {
               <textarea
                 rows={2}
                 value={form.notes}
-                onChange={(event) => setForm({ ...form, notes: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, notes: event.target.value })
+                }
               />
             </label>
             <label className="checkbox-row">
               <input
                 checked={form.isActive}
                 type="checkbox"
-                onChange={(event) => setForm({ ...form, isActive: event.target.checked })}
+                onChange={(event) =>
+                  setForm({ ...form, isActive: event.target.checked })
+                }
               />
               {t("materials.form.active")}
             </label>
             <div className="form-actions">
-              <button className="primary-button" disabled={saveMutation.isPending} type="submit">
+              <button
+                className="primary-button"
+                disabled={saveMutation.isPending}
+                type="submit"
+              >
                 {saveMutation.isPending ? t("common.saving") : t("common.save")}
               </button>
             </div>
@@ -367,7 +587,10 @@ export function MaterialsPage() {
       ) : null}
 
       {movementsMaterialId ? (
-        <Modal title={t("materials.movements.title")} onClose={() => setMovementsMaterialId(null)}>
+        <Modal
+          title={t("materials.movements.title")}
+          onClose={() => setMovementsMaterialId(null)}
+        >
           <div className="table-wrap">
             <table>
               <thead>
@@ -389,14 +612,18 @@ export function MaterialsPage() {
                 ) : (movementsQuery.data?.data ?? []).length === 0 ? (
                   <tr>
                     <td colSpan={5}>
-                      <EmptyState title={t("materials.movements.noMovements")} />
+                      <EmptyState
+                        title={t("materials.movements.noMovements")}
+                      />
                     </td>
                   </tr>
                 ) : (
                   (movementsQuery.data?.data ?? []).map((row) => (
                     <tr key={row.id}>
                       <td dir="ltr">{row.movementDate}</td>
-                      <td><StatusPill status={row.movementType} /></td>
+                      <td>
+                        <StatusPill status={row.movementType} />
+                      </td>
                       <td>{row.quantityDelta}</td>
                       <td>{row.quantityAfter}</td>
                       <td>{row.description || "-"}</td>
@@ -410,7 +637,10 @@ export function MaterialsPage() {
       ) : null}
 
       {adjustMaterial ? (
-        <Modal title={`${t("materials.adjust.title")} - ${adjustMaterial.name}`} onClose={() => setAdjustMaterial(null)}>
+        <Modal
+          title={`${t("materials.adjust.title")} - ${adjustMaterial.name}`}
+          onClose={() => setAdjustMaterial(null)}
+        >
           <form
             className="form-grid"
             onSubmit={(event: FormEvent<HTMLFormElement>) => {
@@ -419,7 +649,11 @@ export function MaterialsPage() {
             }}
           >
             {adjustError ? <p className="form-error">{adjustError}</p> : null}
-            <p className="muted">{t("materials.adjust.current", { value: adjustMaterial.currentQuantity })}</p>
+            <p className="muted">
+              {t("materials.adjust.current", {
+                value: adjustMaterial.currentQuantity,
+              })}
+            </p>
             <label>
               {t("materials.adjust.newQuantity")}
               <input
@@ -430,7 +664,10 @@ export function MaterialsPage() {
                 type="number"
                 value={adjustForm.newQuantity}
                 onChange={(event) =>
-                  setAdjustForm({ ...adjustForm, newQuantity: event.target.value })
+                  setAdjustForm({
+                    ...adjustForm,
+                    newQuantity: event.target.value,
+                  })
                 }
               />
             </label>
@@ -440,12 +677,20 @@ export function MaterialsPage() {
                 required
                 rows={2}
                 value={adjustForm.reason}
-                onChange={(event) => setAdjustForm({ ...adjustForm, reason: event.target.value })}
+                onChange={(event) =>
+                  setAdjustForm({ ...adjustForm, reason: event.target.value })
+                }
               />
             </label>
             <div className="form-actions">
-              <button className="primary-button" disabled={adjustMutation.isPending} type="submit">
-                {adjustMutation.isPending ? t("common.saving") : t("materials.adjust.save")}
+              <button
+                className="primary-button"
+                disabled={adjustMutation.isPending}
+                type="submit"
+              >
+                {adjustMutation.isPending
+                  ? t("common.saving")
+                  : t("materials.adjust.save")}
               </button>
             </div>
           </form>
@@ -453,7 +698,10 @@ export function MaterialsPage() {
       ) : null}
 
       {thresholdMaterial ? (
-        <Modal title={`حد الأمان - ${thresholdMaterial.name}`} onClose={() => setThresholdMaterial(null)}>
+        <Modal
+          title={`حد الأمان - ${thresholdMaterial.name}`}
+          onClose={() => setThresholdMaterial(null)}
+        >
           <form
             className="form-grid"
             onSubmit={(e) => {
@@ -461,21 +709,51 @@ export function MaterialsPage() {
               thresholdMutation.mutate();
             }}
           >
-            {thresholdError ? <p className="form-error">{thresholdError}</p> : null}
-            <p className="muted">الكمية الحالية: {thresholdMaterial.currentQuantity} {thresholdMaterial.unit}</p>
+            {thresholdError ? (
+              <p className="form-error">{thresholdError}</p>
+            ) : null}
+            <p className="muted">
+              الكمية الحالية: {thresholdMaterial.currentQuantity}{" "}
+              {thresholdMaterial.unit}
+            </p>
             <label>
-              حد الأمان (عندما يقل المخزون عن هذا الرقم يظهر تنبيه) <span style={{ color: "#b42318" }}>*</span>
-              <input required dir="ltr" type="number" min={0} step={0.01} value={thresholdValue} onChange={(e) => setThresholdValue(e.target.value)} />
+              حد الأمان (عندما يقل المخزون عن هذا الرقم يظهر تنبيه){" "}
+              <span style={{ color: "#b42318" }}>*</span>
+              <input
+                required
+                dir="ltr"
+                type="number"
+                min={0}
+                step={0.01}
+                value={thresholdValue}
+                onChange={(e) => setThresholdValue(e.target.value)}
+              />
             </label>
-            <p className="muted" style={{ fontSize: 12 }}>اتركه 0 لإيقاف التنبيه لهذه الخامة.</p>
+            <p className="muted" style={{ fontSize: 12 }}>
+              اتركه 0 لإيقاف التنبيه لهذه الخامة.
+            </p>
             <div className="form-actions">
-              <button className="primary-button" disabled={thresholdMutation.isPending} type="submit">
-                {thresholdMutation.isPending ? t("common.saving") : t("common.save")}
+              <button
+                className="primary-button"
+                disabled={thresholdMutation.isPending}
+                type="submit"
+              >
+                {thresholdMutation.isPending
+                  ? t("common.saving")
+                  : t("common.save")}
               </button>
             </div>
           </form>
         </Modal>
       ) : null}
+
+      <CSVImportModal
+        isOpen={csvImportOpen}
+        onClose={() => setCSVImportOpen(false)}
+        materials={rows}
+        onImport={(updates) => bulkImportMutation.mutateAsync(updates)}
+        isLoading={bulkImportMutation.isPending}
+      />
     </>
   );
 }

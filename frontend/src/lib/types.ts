@@ -76,6 +76,7 @@ export type ModelVariant = {
   colorName: string;
   currentQuantity: number;
   currentAverageCostMinor: number;
+  barcode?: string | null;
   isActive: number | boolean;
 };
 
